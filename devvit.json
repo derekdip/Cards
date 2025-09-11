@@ -30,5 +30,26 @@
   },
   "dev": {
     "subreddit": "dealers_game_dev"
+  },
+  "permissions": {
+    "redis": true
+  },
+  "scheduler": {
+    "tasks": {
+      "regular-interval-example-task": {
+        "endpoint": "/internal/scheduler/next-move",
+        "cron": "*/1 * * * *"
+      }
+    }
+  },
+  "settings": {
+    "global": {
+      "seed":{
+        "type": "string",
+        "label": "seed",
+        "defaultValue": "seed",
+        "isSecret": true
+      }
+    }
   }
 }

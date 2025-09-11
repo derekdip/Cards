@@ -1,8 +1,18 @@
 import express from 'express';
 import { InitResponse, IncrementResponse, DecrementResponse } from '../shared/types/api';
-import { redis, reddit, createServer, context, getServerPort } from '@devvit/web/server';
+import { redis, reddit, createServer, context, getServerPort, settings } from '@devvit/web/server';
 import { createPost } from './core/post';
+import seedrandom from 'seedrandom';
+import { GameEngine } from './logic/stateMachine';
+import { generateAllCardTypes } from './logic/card';
+import { Player } from './logic/palyer';
+import { Dealer } from './logic/dealer';
+import { Rule } from './logic/rules';
 
+function createRNG(seed: string): () => number {
+  const rng = seedrandom(seed); // deterministic PRNG
+  return () => rng(); // same API as Math.random()
+}
 const app = express();
 
 // Middleware for JSON body parsing
@@ -15,7 +25,7 @@ app.use(express.text());
 const router = express.Router();
 
 router.get<{ postId: string }, InitResponse | { status: string; message: string }>(
-  '/api/init',
+  '/api/init332',
   async (_req, res): Promise<void> => {
     const { postId } = context;
 
@@ -123,6 +133,66 @@ router.post('/internal/menu/post-create', async (_req, res): Promise<void> => {
     });
   }
 });
+router.get('/api/init', async (_req, res): Promise<void> => {
+  await loadGame()
+  res.json(await GameEngine.getGameState())
+})
+router.get('api/state', async (_req): Promise<void> => {
+  const seed = await settings.get('seed') as string
+  const turn = await redis.get('turn') as string
+  const rng =  createRNG(seed+turn)
+  console.log("state hit"+ rng())
+})
+router.post('/internal/scheduler/next-move', async (_req): Promise<void> => {
+  const state = await redis.get('game-state')
+  console.log(state)
+  const optionChosen = 1
+  switch(state) {
+    case undefined: {
+      // start the game
+      await redis.set('prev-game-state', 'initial')
+      await redis.set('game-state', 'voting')
+      await redis.set('current-player-id', 'id-1')
+      console.log("initializing")
+      await initializeGame()
+      break;
+    }
+    case "initial": {
+      // start the game
+      await redis.set('prev-game-state', 'initial')
+      await redis.set('game-state', 'voting')
+      await redis.set('current-player-id', 'id-1')
+      console.log("initializing")
+      await initializeGame()
+      break;
+    }
+    case "voting": {
+      // deal cards
+      await redis.set('prev-game-state', state)
+      await redis.set('game-state', 'voting')
+      const currentPlayerID = await redis.get('current-player-id')
+      if(!currentPlayerID) break;
+      console.log("player is executing turn")
+      await loadGame()
+      await GameEngine.executeTurn(optionChosen,currentPlayerID)
+      console.log(await GameEngine.getGameState())
+      break;
+    }
+    case "end": {
+      await redis.set('prev-game-state', state)
+      await redis.set('game-state', 'initial')
+    }
+    default: {
+      // unknown state, reset
+      await redis.set('prev-game-state', 'initial')
+      await redis.set('game-state', 'voting')
+      console.log("resetting to initial")
+      await initializeGame()
+      break;
+    }
+    
+  }
+})
 
 // Use router middleware
 app.use(router);
@@ -133,3 +203,91 @@ const port = getServerPort();
 const server = createServer(app);
 server.on('error', (err) => console.error(`server error; ${err.stack}`));
 server.listen(port);
+
+async function initializeGame() {
+  const playerCount = 6
+  await GameEngine.initializeGame('0', 'spades-1',[])
+  for (let i = 0; i < playerCount; i++) {
+    await redis.set(`player-${i}`, 'active')
+    const p = new Player(`id-${i}`);
+    GameEngine.addPlayer(p);
+    p.addCards(8)
+    const storedCards = p.getStoredCards()
+    for(const card of storedCards){
+        await redis.set(`player-${p.id}-${card.type}`, card.count.toString())
+    }
+  }
+  const {rule1,rule2,rule3} = Dealer.getThreeCards()
+  const votingEnds = Date.now()+ 60 * 1000; // 1 minute from now
+  await redis.set('voting-ends', votingEnds.toString())
+  await redis.set('rule-1', rule1.id.toString())
+  await redis.set('rule-2', rule2.id.toString())
+  await redis.set('rule-3', rule3.id.toString())
+  await redis.incrBy('turn', 1)
+  await redis.set('last-card','hearts-1')
+
+}
+async function loadGame() {
+  const playerCount = 6
+  const turn = await redis.get('turn')
+  const lastCard = await redis.get('last-card')
+  const endVotingTimeStr = await redis.get('voting-ends')
+  let currentRules:Rule[] = []
+  const rule1 = await redis.get('rule-1')
+  const rule2 = await redis.get('rule-2')
+  const rule3 = await redis.get('rule-3')
+  if(rule1 && rule2 && rule3){
+    currentRules = [rule1,rule2,rule3].map(r=>Dealer.fromString(r))
+  }else{
+    return
+  }
+  console.log("turn: "+turn)
+  console.log("lastCard: "+lastCard)
+  if(!turn|| !endVotingTimeStr ||!lastCard) return
+  await GameEngine.initializeGame(turn,lastCard,currentRules)
+  GameEngine.setEndVotingTime(parseInt(endVotingTimeStr))
+  for (let i = 0; i < playerCount; i++) {
+    const status = await redis.get(`player-${i}`)
+    const p = new Player(`id-${i}`);
+    GameEngine.addPlayer(p);
+    if(status !== "active") continue;
+    const storedCards = await getCards(p)
+    p.setCards(storedCards)
+  }
+}
+async function getCards(player:Player){
+  const storedCards: {type:string,count:number}[] = []
+  const allTypes = generateAllCardTypes();
+  for(const card of allTypes){
+      const countStr = await redis.get(`player-${player.id}-${card.toString()}`)
+      if(countStr){
+          const count = parseInt(countStr)
+          if(count > 0){
+              storedCards.push({type:card.toString(),count})
+          }
+      }
+  }
+  return storedCards
+}
+
+//create game
+//create players
+//hand player cards
+//store player cards
+//set initial rule
+//store initial rules
+
+//vote on rule
+//enforce rule
+//update player cards
+//evaluate win condition
+//next turn
+//set rules
+
+//vote on rule
+//enforce rule
+//update player cards
+//evaluate win condition
+//next turn
+//set rules
+//..

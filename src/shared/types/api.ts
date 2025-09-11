@@ -16,3 +16,32 @@ export type DecrementResponse = {
   postId: string;
   count: number;
 };
+
+export type StoredCardType = {
+  type: string; // e.g., "5-Hearts" or "-1-Special"
+  count: number;
+};
+export type CardType = {
+  value: number; // 0-9 for regular, -1 for special
+  suit: string;  // e.g., "Hearts", "Diamonds", "Special"
+};
+export type RuleType = {
+  id: number;
+  description: string;
+  punishment: string;
+};
+export type PlayerStateType = {
+  id: string;
+  name: string;
+  handSize: number;
+  handPreview: { cards: CardType[]; overflow: number };
+  handCounts: StoredCardType[];
+};
+export type GameStateType = {
+  players:  PlayerStateType[];
+  currentPlayer: string | undefined;
+  lastCardPlaced: string;
+  currentRules: RuleType[];
+  endVotingTime: number;
+  allRules: RuleType[];
+}
