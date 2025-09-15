@@ -5,95 +5,72 @@ import { PlayerStateType, StoredCardType, CardType } from "../../shared/types/ap
 export class Player {
   id: string;
   name: string;
+  active: boolean=true;
   static rng: () => number;
   // Hand stored as counts for each card type
-  handCounts: Map<string, number>;
+  handCounts: Map<string, StoredCardType>;
 
-  constructor(id: string, name?: string, map?:Map<string, number>) {
+  constructor(id: string, name?: string, map?:Map<string, StoredCardType>) {
     this.id = id ;
-    this.name = name ?? `Bot-${this.id.slice(0, 4)}`;
-    this.handCounts = map?map:new Map<string, number>();
+    this.name = name ?? `${this.id.slice(0, 4)}`;
+    this.handCounts = map?map:new Map<string, StoredCardType>();
+  }
+  setActive(active:boolean){
+    this.active=active
   }
   static setRNG(rng: () => number) {
     Player.rng = rng;
   }
-  static fromDB(data: {
-    id: string;
-    name: string;
-    handCounts: Record<string, number>; // JSON-friendly format
-  }): Player {
-    const map = new Map<string, number>();
-    for (const key in data.handCounts) {
-      map.set(key, data.handCounts[key]!);
-    }
-    return new Player(data.id, data.name, map);
-  }
 
-  /** Serialize for DB storage */
-  toDB(): {
-    id: string;
-    name: string;
-    handCounts: Record<string, number>;
-  } {
-    const counts: Record<string, number> = {};
-    for (const [key, value] of this.handCounts.entries()) {
-      counts[key] = value;
-    }
-    return {
-      id: this.id,
-      name: this.name,
-      handCounts: counts,
-    };
-  }
   async saveCurrentHand() {
     console.log(`Player: ${this.id} hand contents:`);
     for (const [key, value] of this.handCounts.entries()) {
-        await redis.set(`player-${this.id}-${key}`,value.toString())
-        console.log(`${key}: ${value}`);
+        await redis.set(`player-${this.id}-${value.value}-${value.suit}`,value.count.toString())
     }
-    console.log("Total cards now: " + this.handSize);
+  }
+  getTotalCardsInHand(){
+    let total = 0
+    for(const [_, value] of this.handCounts.entries()){
+      total+=value.count
+    }
+    return total
   }
 
   setCards(storedCards: StoredCardType[]) {
     this.handCounts.clear(); // start fresh
-    console.log("Player: "+this.id+" adding cards:")
-    for (const { type, count } of storedCards) {
-      this.handCounts.set(type, count);
-      console.log(`${type}: count ${count}`)
+    for (const { id ,suit,value, count } of storedCards) {
+      this.handCounts.set(id, {count,id,suit,value});
     }
   }
   getStoredCards(): StoredCardType[] {
     const result: StoredCardType[] = [];
-    for (const [type, count] of this.handCounts.entries()) {
-      result.push({ type, count });
+    for (const [_type, card] of this.handCounts.entries()) {
+      result.push(card);
     }
     return result;
   }
-  async addCards(count: number) {
+  async addCards(count: number,  types:Card[]=generateAllCardTypes()) {
     console.log("Player: "+this.id+" adding cards:")
     if(count>400){
-        this.addRandomCardsLarge(count)
+        this.addRandomCardsLarge(count,types)
     }else{
-        this.addRandomCards(count)
+        this.addRandomCards(count,types)
     }
-    console.log("Total cards now: "+this.handSize)
     await this.saveCurrentHand()
   }
-  async removeCards(count: number) {
+  async removeCards(count: number, types:Card[]) {
     console.log("Player: "+this.id+" removing cards:")
     if(count>400){
-        this.removeRandomCardsLarge(count)
+        this.removeRandomCardsLarge(count,types)
     }else{
-        this.removeRandomCards(count)
+        this.removeRandomCards(count,types)
     }
-    console.log("Total cards now: "+this.handSize)
     await this.saveCurrentHand()
   }
-  addRandomCardsLarge(count: number) {
-    const allTypes = generateAllCardTypes();
-    const typeCount = allTypes.length;
+  addRandomCardsLarge(count: number, types:Card[]) {
+    const typeCount = types.length;
     if (typeCount === 0) return;
-  
+
     // Step 1: compute a random proportion for each type
     const allocations: number[] = [];
     let total = 0;
@@ -119,45 +96,61 @@ export class Player {
     }
     // Step 4: add to handCounts
     for (let i = 0; i < typeCount; i++) {
-      const card = allTypes[i]!;
+      const card = types[i]!;
       const key = card.toString();
-      this.handCounts.set(key, (this.handCounts.get(key) ?? 0) + allocations[i]!);
-      console.log(`${key}: ${this.handCounts.get(key)}`)
+      let cardEntry = this.handCounts.get(key);
+      if (!cardEntry) {
+        cardEntry = { id: key, suit: card.suit, value: card.value, count: 0 };
+        this.handCounts.set(key, cardEntry);
+      }
+      this.handCounts.set(key, {...cardEntry, count: cardEntry.count + allocations[i]!});
     }
   }
-  addRandomCards(count: number) {
-    const allTypes = generateAllCardTypes();
+  addRandomCards(count: number, types:Card[]) {
     for (let i = 0; i < count; i++) {
       // pick a random type
-      const card = allTypes[Math.floor(Player.rng() * allTypes.length)];
+      const card = types[Math.floor(Player.rng() * types.length)]!;
       const key = card!.toString();
-      this.handCounts.set(key, (this.handCounts.get(key) ?? 0) + 1);
-      console.log(`${key}: ${this.handCounts.get(key)}`)
+      let cardEntry = this.handCounts.get(key);
+      if (!cardEntry) {
+        cardEntry = { id: key, suit: card.suit, value: card.value, count: 0 };
+        this.handCounts.set(key, cardEntry);
+      }
+      this.handCounts.set(key, {...cardEntry, count: cardEntry.count + 1});
     }
   }
-  removeRandomCards(count: number) {
-    const allTypes = Array.from(this.handCounts.keys()); // only from cards actually in hand
+  removeRandomCards(count: number, types:Card[]) {
+    const allTypes = Array.from(this.handCounts.values()).filter((key) =>
+      types.some((t) => {
+        return t.toString() == key.id
+      })
+    );console.log("here is all types needed to be removed")
+    console.log(allTypes)
     for (let i = 0; i < count; i++) {
       if (allTypes.length === 0) break;
   
       // pick a random card type that the player has
       const card = allTypes[Math.floor(Player.rng() * allTypes.length)];
-      const key = card!.toString();
-      const current = this.handCounts.get(key)!;
+      const key = card;
+      if(!key){
+        continue
+      }
+      const cardEntry = this.handCounts.get(key.id)!;
   
-      if (current > 0) {
-        this.handCounts.set(key, current - 1);
-        console.log(`Removed 1 ${key}, now ${this.handCounts.get(key)}`);
-        if (this.handCounts.get(key) === 0) {
-          this.handCounts.delete(key); // clean up empty entries
+      if (cardEntry.count > 0) {
+        this.handCounts.set(key.id, {...cardEntry, count: cardEntry.count - 1});
+        if (this.handCounts.get(key.id)?.count === 0) {
+          this.handCounts.delete(key.id); // clean up empty entries
           allTypes.splice(allTypes.indexOf(key), 1);
         }
       }
     }
   }
   
-  removeRandomCardsLarge(count: number) {
-    const keys = Array.from(this.handCounts.keys());
+  removeRandomCardsLarge(count: number, types:Card[]) {
+    const keys = Array.from(this.handCounts.values()).filter((key) =>
+      types.some((t) => t.toString() == key.id)
+    );
     const typeCount = keys.length;
     if (typeCount === 0) return;
   
@@ -187,87 +180,58 @@ export class Player {
     // Step 4: remove from handCounts
     for (let i = 0; i < typeCount; i++) {
       const key = keys[i]!;
-      const current = this.handCounts.get(key) ?? 0;
-      const removeCount = Math.min(current, allocations[i]!);
+      const current = this.handCounts.get(key.id) ?? 0;
+      let cardEntry = this.handCounts.get(key.id);
+      if (!cardEntry) {
+        continue; // should not happen
+      }
+      const removeCount = Math.min(cardEntry.count, allocations[i]!);
       if (removeCount > 0) {
-        this.handCounts.set(key, current - removeCount);
-        console.log(`Removed ${removeCount} ${key}, now ${this.handCounts.get(key)}`);
-        if (this.handCounts.get(key) === 0) {
-          this.handCounts.delete(key);
+        this.handCounts.set(key.id, {...cardEntry,count:cardEntry.count - removeCount});
+        if (this.handCounts.get(key.id)?.count === 0) {
+          this.handCounts.delete(key.id);
         }
       }
     }
 }
-async removeAllByFilter(
-    options: { suit?: string; comparator?: "less" | "greater"; number?: number }
-  ) {
-    console.log(`Player: ${this.id} removing by filter`, options);
-  
-    const keys = Array.from(this.handCounts.keys());
-  
-    for (const key of keys) {
-      const [rankStr, cardSuit] = key.split("-");
-      const rank = parseInt(rankStr!, 10);
-  
-      let match = true;
-  
-      // Suit filter
-      if (options.suit && cardSuit !== options.suit) {
-        match = false;
-      }
-  
-      // Rank filter
-      if (options.comparator && options.number !== undefined) {
-        if (options.comparator === "less" && !(rank < options.number)) {
-          match = false;
-        }
-        if (options.comparator === "greater" && !(rank > options.number)) {
-          match = false;
-        }
-      }
-  
-      // If matches, remove completely
-      if (match) {
-        console.log(`Removed all ${key} (${this.handCounts.get(key)} cards)`);
-        this.handCounts.set(key,0);
-      }
-    }
-  
-    console.log("Total cards now: " + this.handSize);
-    await this.saveCurrentHand();
+ async updateCards(multiplier:number, types:Card[]){
+  let totalCards = this.getTotalCardsInHand()
+  let deltaTotalCardCount = (multiplier*totalCards - totalCards)
+  console.log("delta:"+deltaTotalCardCount)
+  if(deltaTotalCardCount<0){
+    await this.removeCards(Math.abs(deltaTotalCardCount),types)
+  }else{
+    await this.addCards(deltaTotalCardCount,types)
   }
+ }
   
   
   /** Weighted random choice based on card counts */
-  chooseCard(): Card | null {
+  async chooseCard(): Promise<Card | null> {
     const entries = Array.from(this.handCounts.entries());
     if (entries.length === 0) return null;
 
     // Total number of cards
-    const total = entries.reduce((sum, [, count]) => sum + count, 0);
+    const total = entries.reduce((sum, [, card]) => sum + card.count, 0);
 
     // Roll from 0..total-1
     const roll = Math.floor(Player.rng() * total);
 
     // Walk cumulative sum to find the chosen card
     let cum = 0;
-    for (const [key, count] of entries) {
-      cum += count;
+    for (const [key, card] of entries) {
+      cum += card.count;
       if (roll < cum) {
         // decrement count
-        if (count === 1) this.handCounts.delete(key);
-        else this.handCounts.set(key, count - 1);
+        if (card.count === 1) this.handCounts.delete(key);
+        else this.handCounts.set(key, {...card,count:card.count - 1});
 
         // parse back into a Card object
         return Card.fromString(key);
       }
     }
+    await this.saveCurrentHand()
     return null;
-  }
-
-  /** Total number of cards currently in hand */
-  get handSize(): number {
-    return Array.from(this.handCounts.values()).reduce((a, b) => a + b, 0);
   }
 
   /** Preview of cards for frontend (cap visual count) */
@@ -275,15 +239,15 @@ async removeAllByFilter(
     const cards: CardType[] = [];
     let overflow = 0;
   
-    for (const [key, count] of this.handCounts.entries()) {
+    for (const [key, cardDetails] of this.handCounts.entries()) {
       const card = Card.fromString(key); // still returns class
-      const add = Math.min(cap - cards.length, count);
+      const add = Math.min(cap - cards.length, cardDetails.count);
   
       for (let i = 0; i < add; i++) {
         cards.push({ suit: card.suit,value: card.value }); // convert to plain type
       }
   
-      overflow += count - add;
+      overflow += cardDetails.count - add;
       if (cards.length >= cap) break;
     }
   
@@ -293,7 +257,7 @@ async removeAllByFilter(
     return {
       id: this.id,
       name: this.name,
-      handSize: this.handSize,
+      handSize: this.getTotalCardsInHand(),
       handPreview: await this.getHandPreview(),
       handCounts: this.getStoredCards()
     }
@@ -331,34 +295,54 @@ export class PlayerLinkedList {
       }
     }
   
-    removePlayer(playerId: string) {
-      if (!this.head) return;
-  
-      let node = this.head;
-      do {
-        if (node.player.id === playerId) {
-          if (node.next === node) {
-            // Last player
-            this.head = null;
-            this.current = null;
-          } else {
-            node.prev.next = node.next;
-            node.next.prev = node.prev;
-            if (this.head === node) this.head = node.next;
-            if (this.current === node) this.current = node.next;
-          }
-          break;
-        }
-        node = node.next;
-      } while (node !== this.head);
-    }
-  
     advanceTurn() {
       if (!this.current) return null;
-      while (this.current && this.current.player.handSize === 0) {
+      console.log("prev: "+this.current.player.id)
+      while ( this.current.next.player.id!=this.current.player.id) {
         this.current = this.current.next;
+        if(this.current.player.getTotalCardsInHand()!=0){
+          break
+        }
       }
+      console.log("next: "+this.current.player.id)
       return this.current.player;
+    }
+    // Peek next active player without changing current
+    peekNextPlayer(): Player | null {
+      if (!this.current) return null;
+
+      let node = this.current.next;
+      while (node !== this.current) {
+        if (node.player.getTotalCardsInHand() > 0) return node.player;
+        node = node.next;
+      }
+      return this.current.player.getTotalCardsInHand() > 0 ? this.current.player : null;
+    }
+
+    // Get previous active player
+    getPreviousPlayer(): Player | null {
+      if (!this.current) return null;
+
+      let node = this.current.prev;
+      while (node !== this.current) {
+        if (node.player.getTotalCardsInHand() > 0) return node.player;
+        node = node.prev;
+      }
+      return this.current.player.getTotalCardsInHand() > 0 ? this.current.player : null;
+    }
+
+    // Get all active players
+    getAllActivePlayers(): Player[] {
+      if (!this.current) return [];
+
+      const active: Player[] = [];
+      let node = this.current;
+      do {
+        if (node.player.getTotalCardsInHand() > 0) active.push(node.player);
+        node = node.next;
+      } while (node !== this.current);
+
+      return active;
     }
   
     getPlayers(): Player[] {

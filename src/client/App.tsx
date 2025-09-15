@@ -1,39 +1,42 @@
 //import { navigateTo } from '@devvit/web/client';
-//import { useCounter } from './hooks/useCounter';
+//import { useCounter } from './hooks/useCounter'
 
-import { GameStateType } from "../shared/types/api";
+import { LastCard } from "./components/LastCard";
 import { TopMenu } from "./components/Menu";
 import { RuleHand } from "./components/RuleSpinner";
+import TableView from "./components/Table";
 import { Timer } from "./components/timer";
 import { GameStateProvider } from "./GameStateContext";
 
 export const App = () => {
-  const rules = [
-    "Draw 2 extra cards",
-    "Skip your next turn",
-    "Swap hands with another player",
-    "Play twice in a row",
-    "Discard half your hand",
-  ];
-  //const { count, username, loading, increment, decrement } = useCounter();
   return (
     <GameStateProvider>
-      <div className="flex relative flex-col justify-center items-center min-h-screen gap-4">
-        <TopMenu />
-        <Timer />
-        <div>this is new</div>
-        <RuleHand/>
-        <button onClick={async()=>{
-            try {
-                    const res = await fetch('/api/init');
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    const data: GameStateType = await res.json();
-                    console.log(data)
-            } catch (err) {
-                    console.error('Failed to init counter', err);
-            }
-          }}>hello</button>
+  <div className="relative w-full h-screen bg-black flex flex-col">
+    {/* Fixed top bar */}
+    <TopMenu />
+
+    {/* Timer just under menu */}
+    <div className="py-2">
+      <Timer />
+    </div>
+
+    {/* Game table fills remaining space */}
+    <div className="flex-1 flex justify-center items-center overflow-hidden">
+      <div className="relative w-[90%] h-[80%] bg-green-800 rounded-full shadow-2xl border-8 border-yellow-900 flex flex-col items-center">
+        
+        {/* Centered Last Card */}
+        <div className="flex justify-center items-center flex-1">
+          <LastCard />
+        </div>
+
+        {/* Dealer / Rule Hand pushed down */}
+        <div className="flex justify-center items-center mt-6 mb-8">
+          <RuleHand />
+        </div>
       </div>
-    </GameStateProvider>
+    </div>
+  </div>
+</GameStateProvider>
+
   );
 };

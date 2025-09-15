@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useGameState } from "../GameStateContext"; // your context hook
-import { PlayerModal } from "./grid";
+import { PlayerModal } from "./Grid";
 import { PlayerStateType } from "../../shared/types/api";
 
 // Menu bar at top
@@ -12,12 +12,12 @@ export const TopMenu = () => {
   return (
     <div className="relative">
       {/* Top bar */}
-      <div className="w-full bg-gray-800 text-white py-2 flex justify-center gap-4">
+      <div className="w-full bg-gray-800 text-white py-2 flex gap-4 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
         {gameState.players.map(player => (
           <button
             key={player.id}
             onClick={() => setSelectedPlayer(player)}
-            className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 transition"
+            className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 transition shrink-0"
           >
             hello{player.name}
           </button>

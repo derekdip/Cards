@@ -6,44 +6,43 @@ import { RuleType } from "../../shared/types/api"; // adjust path
 
 // ---------- RuleHand (top-level controller) ----------
 export function RuleHand({ loops = 2 }: { loops?: number }) {
-    const { gameState, loading } = useGameState();
-    const [revealed, setRevealed] = useState(false);
-  
-    useEffect(() => {
-      if (!gameState?.currentRules) return;
-  
-      // Reset before each spin
-      setRevealed(false);
-  
-      const totalSpinTime = 4000 + (gameState.currentRules.length - 1) * 500;
-      const timer = setTimeout(() => {
-        setRevealed(true); // reveal chosen cards after spin
-      }, totalSpinTime + 200);
-  
-      return () => clearTimeout(timer);
-    }, [gameState?.currentRules]); // <-- reset/retrigger when rules change
-  
-    if (loading) return <div>Loading rules...</div>;
-    if (!gameState) return <div>No game state found.</div>;
-  
-    return (
-      <div className="flex gap-6 justify-center p-4">
-        {gameState.currentRules.map((rule, i) => (
-          <RuleReel
-            key={i}
-            allCards={gameState.allRules}
-            chosen={rule}
-            delay={i * 0.5}
-            loops={loops}
-            revealed={revealed}
-          />
-        ))}
-      </div>
-    );
-  }
-  
+  const { gameState, loading } = useGameState();
+  const [revealed, setRevealed] = useState(false);
 
-// ---------- RuleReel (one spinning column) ----------
+  useEffect(() => {
+    if (!gameState?.currentRules) return;
+
+    // Reset before each spin
+    setRevealed(false);
+
+    const totalSpinTime = 4000 + (gameState.currentRules.length - 1) * 500;
+    const timer = setTimeout(() => {
+      setRevealed(true); // reveal chosen cards after spin
+    }, totalSpinTime + 200);
+
+    return () => clearTimeout(timer);
+  }, [gameState?.currentRules]);
+
+  if (loading) return <div>Loading rules...</div>;
+  if (!gameState) return <div>No game state found.</div>;
+
+  return (
+    <div className="flex justify-center p-4 gap-2">
+      {gameState.currentRules.map((rule, i) => (
+        <RuleReel
+          key={i}
+          allCards={gameState.allRules}
+          chosen={rule}
+          delay={i * 0.5}
+          loops={loops}
+          revealed={revealed}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ---------- RuleReel (spinning column) ----------
 function RuleReel({
   allCards,
   chosen,
@@ -60,13 +59,15 @@ function RuleReel({
   const controls = useAnimation();
   const [sequence, setSequence] = useState<RuleType[]>([]);
 
+  const cardWidth = 70;
+  const cardHeight = 88;
+
   useEffect(() => {
     const seq = buildSpinSequence(allCards, chosen, loops);
     setSequence(seq);
 
     const timer = setTimeout(() => {
-      const cardWidth = 96; // width for RuleCard
-      const totalWidth = seq.length * cardWidth;
+      const totalWidth = seq.length * (cardWidth); // include gap
 
       controls.start({
         x: -(totalWidth - cardWidth),
@@ -81,57 +82,72 @@ function RuleReel({
   }, [allCards, chosen, delay, loops, controls]);
 
   return (
-    <div className="h-36 w-24 bg-gray-800 rounded-xl overflow-hidden relative">
+    <div
+      className="overflow-hidden relative rounded-xl"
+      style={{ width: cardWidth, height: cardHeight, perspective: 1200 }}
+    >
       {sequence.length > 0 && (
-        <motion.div
-          animate={controls}
-          initial={{ x: 96 }} // just off right
-          className="flex flex-row absolute top-0 left-0"
-        >
-          {sequence.map((card, i) => (
-            <div key={i} className="flex items-center justify-center">
-              {/* The last card in the sequence is the chosen one */}
-              {i === sequence.length - 1 ? (
-                <RuleCard
-                  back={card.id.toString()}
-                  front={card.description}
-                  onPick={() => {}}
-                  revealed={revealed}
-                  disabled={false}
-                />
-              ) : (
-                <div className="w-24 h-36 flex items-center justify-center text-white text-xl font-bold">
-                  {card.id}
-                </div>
-              )}
-            </div>
-          ))}
-        </motion.div>
+       <motion.div
+       animate={controls}
+       initial={{ x: cardWidth }}
+       className="flex flex-row absolute top-0 left-0"
+     >
+       {sequence.map((card, i) => (
+         <div
+           key={i}
+           className="flex items-center justify-center"
+           style={{
+             width: cardWidth,
+             height: cardHeight,
+           }}
+         >
+           <RuleCard
+             back={card.id.toString()}
+             front={card.description+card.successText+card.failText}
+             onPick={() => {}}
+             revealed={revealed && i === sequence.length - 1} // only reveal last card
+             disabled={true} // spinning cards aren’t clickable
+             width={cardWidth}
+             height={cardHeight}
+           />
+         </div>
+       ))}
+     </motion.div>     
       )}
     </div>
   );
 }
 
 // ---------- RuleCard (flippable card) ----------
+// ---------- RuleCard (flippable card with improved styling) ----------
 export function RuleCard({
   onPick,
   revealed,
   disabled,
   back,
-  front
+  front,
+  width = 112,
+  height = 168,
 }: {
   onPick: () => void;
   revealed: boolean;
   disabled: boolean;
   back: string;
   front: string;
+  width?: number;
+  height?: number;
 }) {
+  // Calculate font sizes based on card dimensions
+  const backFontSize = Math.max(12, width * 0.18); // 18% of width, min 12px
+  const frontFontSize = Math.max(10, width * 0.12); // 12% of width, min 10px
+
   return (
     <motion.div
       className={clsx(
-        "w-24 h-36 cursor-pointer perspective",
-        disabled && "opacity-50 cursor-not-allowed"
+        "cursor-pointer perspective",
+        disabled && "cursor-not-allowed"
       )}
+      style={{ width, height }}
       onClick={!disabled ? onPick : undefined}
     >
       <motion.div
@@ -140,18 +156,35 @@ export function RuleCard({
         transition={{ duration: 0.6 }}
       >
         {/* Face Down */}
-        <div className="absolute w-full h-full bg-gray-800 rounded-xl flex items-center justify-center backface-hidden">
-          <span className="text-white font-bold">{back}</span>
+        <div
+          className="absolute w-full h-full flex items-center justify-center backface-hidden shadow-lg border-2 border-gray-700 "
+          style={{
+            backgroundColor: "#374151" // fully opaque dark gradient
+          }}
+        >
+          <span
+            className="text-white font-bold"
+            style={{ fontSize: backFontSize }}
+          >
+            {back}
+          </span>
         </div>
 
         {/* Face Up */}
-        <div className="absolute w-full h-full bg-white rounded-xl flex items-center justify-center backface-hidden rotate-y-180 shadow-md">
-          <span className="text-black text-center p-2">{front}</span>
+        <div className="absolute w-full h-full rounded-xl flex flex-col items-center justify-center backface-hidden rotate-y-180 shadow-lg border-2 border-yellow-400 bg-gradient-to-br from-yellow-200 via-yellow-300 to-yellow-100 p-2">
+          <span
+            className="text-black text-center font-semibold"
+            style={{ fontSize: frontFontSize }}
+          >
+            {front}
+          </span>
         </div>
       </motion.div>
     </motion.div>
   );
 }
+
+
 
 // ---------- Helper: build spin sequence ----------
 function buildSpinSequence(
