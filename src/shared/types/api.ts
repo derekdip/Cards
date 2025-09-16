@@ -18,6 +18,8 @@ export type DecrementResponse = {
 };
 
 export type StoredCardType = {
+  suit:string;
+  value:number;
   type: string; // e.g., "5-Hearts" or "-1-Special"
   count: number;
 };

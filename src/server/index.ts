@@ -1,5 +1,5 @@
 import express from 'express';
-import { InitResponse, IncrementResponse, DecrementResponse } from '../shared/types/api';
+import { InitResponse, IncrementResponse, DecrementResponse, StoredCardType } from '../shared/types/api';
 import { redis, reddit, createServer, context, getServerPort, settings } from '@devvit/web/server';
 import { createPost } from './core/post';
 import seedrandom from 'seedrandom';
@@ -151,7 +151,7 @@ router.post('/internal/scheduler/next-move', async (_req): Promise<void> => {
       // start the game
       await redis.set('prev-game-state', 'initial')
       await redis.set('game-state', 'voting')
-      await redis.set('current-player-id', 'id-1')
+      await redis.set('current-player-id', 'id-0')
       console.log("initializing")
       await initializeGame()
       break;
@@ -260,14 +260,14 @@ async function loadGame() {
   return GameEngine.getGameState()
 }
 async function getCards(player:Player){
-  const storedCards: {type:string,count:number}[] = []
+  const storedCards:StoredCardType[] = []
   const allTypes = generateAllCardTypes();
   for(const card of allTypes){
       const countStr = await redis.get(`player-${player.id}-${card.toString()}`)
       if(countStr){
           const count = parseInt(countStr)
           if(count > 0){
-              storedCards.push({type:card.toString(),count})
+              storedCards.push({type:card.toString(),count, suit:card.suit,value:card.value})
           }
       }
   }

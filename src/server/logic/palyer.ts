@@ -7,65 +7,45 @@ export class Player {
   name: string;
   static rng: () => number;
   // Hand stored as counts for each card type
-  handCounts: Map<string, number>;
+  handCounts: Map<string, StoredCardType>;
+  handSize:number=0
 
-  constructor(id: string, name?: string, map?:Map<string, number>) {
+  constructor(id: string, name?: string, map?:Map<string, StoredCardType>) {
     this.id = id ;
     this.name = name ?? `Bot-${this.id.slice(0, 4)}`;
-    this.handCounts = map?map:new Map<string, number>();
+    this.handCounts = map?map:new Map<string, StoredCardType>();
   }
   static setRNG(rng: () => number) {
     Player.rng = rng;
   }
-  static fromDB(data: {
-    id: string;
-    name: string;
-    handCounts: Record<string, number>; // JSON-friendly format
-  }): Player {
-    const map = new Map<string, number>();
-    for (const key in data.handCounts) {
-      map.set(key, data.handCounts[key]!);
-    }
-    return new Player(data.id, data.name, map);
-  }
 
-  /** Serialize for DB storage */
-  toDB(): {
-    id: string;
-    name: string;
-    handCounts: Record<string, number>;
-  } {
-    const counts: Record<string, number> = {};
-    for (const [key, value] of this.handCounts.entries()) {
-      counts[key] = value;
-    }
-    return {
-      id: this.id,
-      name: this.name,
-      handCounts: counts,
-    };
-  }
   async saveCurrentHand() {
     console.log(`Player: ${this.id} hand contents:`);
-    for (const [key, value] of this.handCounts.entries()) {
-        await redis.set(`player-${this.id}-${key}`,value.toString())
-        console.log(`${key}: ${value}`);
+    let total = 0
+    for (const [key, card] of this.handCounts.entries()) {
+        await redis.set(`player-${this.id}-${key}`,card.count.toString())
+        console.log(`${key}: ${card.count}`);
+        total+= card.count
     }
+    this.handSize = total
     console.log("Total cards now: " + this.handSize);
   }
 
   setCards(storedCards: StoredCardType[]) {
     this.handCounts.clear(); // start fresh
     console.log("Player: "+this.id+" adding cards:")
-    for (const { type, count } of storedCards) {
-      this.handCounts.set(type, count);
-      console.log(`${type}: count ${count}`)
+    let total = 0
+    for (const card of storedCards) {
+      this.handCounts.set(card.type, card);
+      console.log(`${card.type}: count ${card.count}`)
+      total+= card.count
     }
+    this.handSize = total
   }
   getStoredCards(): StoredCardType[] {
     const result: StoredCardType[] = [];
-    for (const [type, count] of this.handCounts.entries()) {
-      result.push({ type, count });
+    for (const [_type, card] of this.handCounts.entries()) {
+      result.push(card);
     }
     return result;
   }
@@ -121,7 +101,12 @@ export class Player {
     for (let i = 0; i < typeCount; i++) {
       const card = allTypes[i]!;
       const key = card.toString();
-      this.handCounts.set(key, (this.handCounts.get(key) ?? 0) + allocations[i]!);
+      const playerCard =  this.handCounts.get(key)
+      if(!playerCard){
+        this.handCounts.set(key, {type:card.toString(),suit:card.suit,value:card.value,count: allocations[i]!})
+      }else{
+        this.handCounts.set(key, {...playerCard,count:playerCard.count + allocations[i]!});
+      }
       console.log(`${key}: ${this.handCounts.get(key)}`)
     }
   }
@@ -129,34 +114,46 @@ export class Player {
     const allTypes = generateAllCardTypes();
     for (let i = 0; i < count; i++) {
       // pick a random type
-      const card = allTypes[Math.floor(Player.rng() * allTypes.length)];
+      const card = allTypes[Math.floor(Player.rng() * allTypes.length)]!;
       const key = card!.toString();
-      this.handCounts.set(key, (this.handCounts.get(key) ?? 0) + 1);
+      const playerCard =  this.handCounts.get(key)
+      if(!playerCard){
+        this.handCounts.set(key, {type:card.toString(),suit:card.suit,value:card.value,count: 1})
+      }else{
+        this.handCounts.set(key, {...playerCard,count:playerCard.count + 1});
+      }
       console.log(`${key}: ${this.handCounts.get(key)}`)
     }
   }
-  removeRandomCards(count: number) {
+  async removeRandomCards(count: number) {
     const allTypes = Array.from(this.handCounts.keys()); // only from cards actually in hand
     for (let i = 0; i < count; i++) {
       if (allTypes.length === 0) break;
   
       // pick a random card type that the player has
       const card = allTypes[Math.floor(Player.rng() * allTypes.length)];
-      const key = card!.toString();
-      const current = this.handCounts.get(key)!;
+      if(!card){
+        continue
+      }
+      const key = card.toString();
+      const playerCard = this.handCounts.get(key);
+      if(!playerCard){
+        continue
+      }
   
-      if (current > 0) {
-        this.handCounts.set(key, current - 1);
+      if (playerCard.count > 0) {
+        this.handCounts.set(key, {...playerCard,count:(playerCard.count - 1)});
         console.log(`Removed 1 ${key}, now ${this.handCounts.get(key)}`);
-        if (this.handCounts.get(key) === 0) {
+        if (playerCard.count === 0) {
           this.handCounts.delete(key); // clean up empty entries
+          await redis.del(`player-${this.id}-${key}`)
           allTypes.splice(allTypes.indexOf(key), 1);
         }
       }
     }
   }
   
-  removeRandomCardsLarge(count: number) {
+  async removeRandomCardsLarge(count: number) {
     const keys = Array.from(this.handCounts.keys());
     const typeCount = keys.length;
     if (typeCount === 0) return;
@@ -187,13 +184,17 @@ export class Player {
     // Step 4: remove from handCounts
     for (let i = 0; i < typeCount; i++) {
       const key = keys[i]!;
-      const current = this.handCounts.get(key) ?? 0;
-      const removeCount = Math.min(current, allocations[i]!);
+      const playerCard = this.handCounts.get(key);
+      if(!playerCard){
+        continue
+      }
+      const removeCount = Math.min(playerCard.count, allocations[i]!);
       if (removeCount > 0) {
-        this.handCounts.set(key, current - removeCount);
+        this.handCounts.set(key, {...playerCard, count: (playerCard.count - removeCount)});
         console.log(`Removed ${removeCount} ${key}, now ${this.handCounts.get(key)}`);
-        if (this.handCounts.get(key) === 0) {
+        if (playerCard.count === 0) {
           this.handCounts.delete(key);
+          await redis.del(`player-${this.id}-${key}`)
         }
       }
     }
@@ -229,7 +230,8 @@ async removeAllByFilter(
       // If matches, remove completely
       if (match) {
         console.log(`Removed all ${key} (${this.handCounts.get(key)} cards)`);
-        this.handCounts.set(key,0);
+        this.handCounts.delete(key);
+        await redis.del(`player-${this.id}-${key}`)
       }
     }
   
@@ -239,24 +241,28 @@ async removeAllByFilter(
   
   
   /** Weighted random choice based on card counts */
-  chooseCard(): Card | null {
+  async chooseCard(): Promise<Card | null> {
     const entries = Array.from(this.handCounts.entries());
     if (entries.length === 0) return null;
 
     // Total number of cards
-    const total = entries.reduce((sum, [, count]) => sum + count, 0);
+    const total = entries.reduce((sum, [, card]) => sum + card.count, 0);
 
     // Roll from 0..total-1
     const roll = Math.floor(Player.rng() * total);
 
     // Walk cumulative sum to find the chosen card
     let cum = 0;
-    for (const [key, count] of entries) {
-      cum += count;
+    for (const [key, playerCard] of entries) {
+      cum += playerCard.count;
       if (roll < cum) {
         // decrement count
-        if (count === 1) this.handCounts.delete(key);
-        else this.handCounts.set(key, count - 1);
+        if (playerCard.count === 1) {
+          this.handCounts.delete(key);
+          await redis.del(`player-${this.id}-${key}`)
+        }
+        else this.handCounts.set(key, {...playerCard,count:(playerCard.count - 1)});
+        await this.saveCurrentHand()
 
         // parse back into a Card object
         return Card.fromString(key);
@@ -265,39 +271,30 @@ async removeAllByFilter(
     return null;
   }
 
-  /** Total number of cards currently in hand */
-  get handSize(): number {
-    return Array.from(this.handCounts.values()).reduce((a, b) => a + b, 0);
-  }
-
   /** Preview of cards for frontend (cap visual count) */
   async getHandPreview(cap: number = 300) {
     const cards: CardType[] = [];
     let overflow = 0;
   
-    for (const [key, count] of this.handCounts.entries()) {
+    for (const [key, playerCard] of this.handCounts.entries()) {
       const card = Card.fromString(key); // still returns class
-      const add = Math.min(cap - cards.length, count);
+      const add = Math.min(cap - cards.length, playerCard.count);
   
       for (let i = 0; i < add; i++) {
         cards.push({ suit: card.suit,value: card.value }); // convert to plain type
       }
   
-      overflow += count - add;
+      overflow += playerCard.count - add;
       if (cards.length >= cap) break;
     }
   
     return { cards, overflow }; // plain objects only
   }
   async getPlayerState(): Promise<PlayerStateType> {
-    let handSize = 0
-    for( let cards of this.getStoredCards()){
-      handSize+=cards.count
-    }
     return {
       id: this.id,
       name: this.name,
-      handSize: handSize,
+      handSize: this.handSize,
       handPreview: await this.getHandPreview(),
       handCounts: this.getStoredCards()
     }

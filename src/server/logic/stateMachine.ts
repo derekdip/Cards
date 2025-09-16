@@ -97,7 +97,7 @@ export class GameEngine {
     if(!playerNode){
       return false
     }
-    const pickedCard = playerNode.player.chooseCard()
+    const pickedCard = await playerNode.player.chooseCard()
     console.log("Player "+playerNode.player.id+" chose option: "+optionChosen)
     if(!pickedCard){
       return false
