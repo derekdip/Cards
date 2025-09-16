@@ -59,10 +59,5 @@ export function generateAllCardTypes(): Card[] {
       }
     }
   
-    // Special cards (value -1)
-    for (const suit of specialSuits) {
-      cards.push(new Card(-1, suit));
-    }
-  
     return cards;
   }

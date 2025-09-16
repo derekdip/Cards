@@ -4,7 +4,7 @@ import { Carousel } from "./Carousel";
 import { useEffect, useRef, useState } from "react";
 
 const suits = ["♣", "♦", "♥", "♠"];
-const values = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const values = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 export function PlayerModal({ player, onClose }: { player: PlayerStateType; onClose: () => void }) {
   if (!player) return null;
