@@ -213,7 +213,7 @@ async function initializeGame() {
     p.addCards(8)
     const storedCards = p.getStoredCards()
     for(const card of storedCards){
-        await redis.set(`player-${p.id}-${card.type}`, card.count.toString())
+        await redis.set(`player-${p.id}-${card.id}`, card.count.toString())
     }
   }
   const {rule1,rule2,rule3} = Dealer.getThreeCards()
@@ -267,7 +267,7 @@ async function getCards(player:Player){
       if(countStr){
           const count = parseInt(countStr)
           if(count > 0){
-              storedCards.push({type:card.toString(),count, suit:card.suit,value:card.value})
+              storedCards.push({id:card.toString(),count, suit:card.suit,value:card.value})
           }
       }
   }

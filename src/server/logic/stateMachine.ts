@@ -27,18 +27,21 @@ export class GameEngine {
       currentRules = [rule1,rule2,rule3].map(r=>Dealer.fromString(r))
     }
     console.log(Dealer.currentRulesDisplayed)
-    console.log(Dealer.currentRulesDisplayed.map<RuleType>(r=>({id:r.id,description:r.description,punishment:r.punishment})))
+    // id: number;
+    // description: string;
+    // successText: string;
+    // failText: string;
+    // successTarget: Target;
+    // failTarget: Target;
+
+    console.log(Dealer.currentRulesDisplayed.map<RuleType>(r=>({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})))
     return {
       players: await Promise.all(GameEngine.players.getPlayers().map(async (p) => await p.getPlayerState())),
       currentPlayer: await redis.get('current-player-id'),
       lastCardPlaced: (await redis.get('last-card')??""),
-      currentRules: currentRules.map<RuleType>(r=>({id:r.id,description:r.description,punishment:r.punishment})),
+      currentRules: currentRules.map<RuleType>(r=>({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})),
       endVotingTime: GameEngine.endVotingTime,
-      allRules: GameEngine.rules.map<RuleType>(r => ({
-        id: r.id,
-        description: r.description,
-        punishment: r.punishment,
-      })),
+      allRules: GameEngine.rules.map<RuleType>(r => ({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})),
     }
   }
   constructor() {}
@@ -108,18 +111,18 @@ export class GameEngine {
     if(!ruleToEnforce){
       return false
     }
-    const isValid = ruleToEnforce.apply(pickedCard)
+    const isValid = await ruleToEnforce.applyEffect(pickedCard,playerNode.player)
     console.log("rule was: "+isValid)
     console.log(ruleToEnforce.description)
-    if(isValid){
-      console.log("rule was not broken")
-      console.log("hererfdosdhfisuhdieasdjfshdi")
-      await playerNode.player.addCards(1000)
-    }else{
-      console.log("rule was broken")
-      console.log("herereasdjfshdi")
-      await playerNode.player.removeAllByFilter({number:9,comparator:"less"})
-    }
+    // if(isValid){
+    //   console.log("rule was not broken")
+    //   console.log("hererfdosdhfisuhdieasdjfshdi")
+    //   await playerNode.player.addCards(1000)
+    // }else{
+    //   console.log("rule was broken")
+    //   console.log("herereasdjfshdi")
+    //   await playerNode.player.removeAllByFilter({number:9,comparator:"less"})
+    // }
     const {rule1:newRule1,rule2:newRule2,rule3:newRule3} = Dealer.getThreeCards()
     await redis.set('rule-1', newRule1.id.toString())
     await redis.set('rule-2', newRule2.id.toString())

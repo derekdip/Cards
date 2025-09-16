@@ -1,45 +1,239 @@
-import { Card } from "./card";
+import { RuleType } from "../../shared/types/api";
+import { Card, generateAllCardTypes } from "./card";
+import { Player } from "./palyer";
 import { GameEngine } from "./stateMachine";
 
-type applyFunction = (card:Card) => boolean
+type applyFunction = (card: Card) => boolean;
+export type Target = "self" | "next" | "previous" | "all";
+
+export type Effect = {
+  target: Target;
+  multiplier: number; // e.g., 2 = double, 0.5 = half
+  filter: Card[]; // for cards
+  removeAll?:boolean
+};
+
 export class Rule {
-    description: string;
-    punishment: string;
-    apply:applyFunction;
-    id:number
-    static idCounter = 0
-    constructor(description: string, punishment: string, apply:applyFunction) {
-        this.description = description;
-        this.punishment = punishment;
-        this.apply = apply
-        this.id = Rule.idCounter
-        Rule.idCounter++
+  id: number;
+  description: string;
+  private apply: applyFunction;
+
+  // condensed display
+  successText: string;
+  failText: string;
+
+  // target for applying effect
+  successTarget: Target;
+  failTarget: Target;
+
+  // actual effects to apply programmatically
+  successEffect: Effect;
+  failEffect: Effect;
+
+  static idCounter = 0;
+
+  constructor(
+    description: string,
+    apply: applyFunction,
+    successText: string,
+    failText: string,
+    successEffect: Effect,
+    failEffect: Effect
+  ) {
+    this.description = description;
+    this.apply = apply;
+    this.successText = successText;
+    this.failText = failText;
+    this.successEffect = successEffect;
+    this.failEffect = failEffect;
+
+    this.successTarget = successEffect.target;
+    this.failTarget = failEffect.target;
+
+    this.id = Rule.idCounter++;
+  }
+  toRuleType(): RuleType {
+    return {
+      id: this.id,
+      description: this.description,
+      successText: this.successText,
+      failText: this.failText,
+      successTarget: this.successTarget,
+      failTarget: this.failTarget,
+    };
+  }
+  static fromString(id: number): Rule {
+    for (const rule of allPossibleRules) {
+      if (rule.id === id) return rule;
     }
-    static fromString(id:number):Rule{
-        for(const rule of allPossibleRules){
-            if(rule.id===id) return rule
-        }
-        return allPossibleRules[0]!
+    return allPossibleRules[0]!;
+  }
+
+  async applyEffect(card: Card, actingPlayer: Player) {
+    const isSuccess = this.apply(card);
+    const effect = isSuccess ? this.successEffect : this.failEffect;
+  
+    // Resolve targets
+    let targets: Player[] = [];
+    switch (effect.target) {
+      case "self":
+        targets = [actingPlayer];
+        break;
+      case "previous":
+        const prev = GameEngine.players.getPreviousPlayer();
+        if (prev) targets = [prev];
+        break;
+      case "next":
+        const next = GameEngine.players.peekNextPlayer();
+        if (next) targets = [next];
+        break;
+      case "all":
+        targets = GameEngine.players.getAllActivePlayers();
+        break;
     }
-    
+  
+    // Apply effect to each target
+    for (const p of targets) {
+      const multiplier = effect.multiplier;
+      await p.updateCards(multiplier,effect.filter)
+    }
+  
+    return isSuccess;
+  }
+  
 }
-export const allPossibleRules:Rule[] = [
-    new Rule("Must be Even","Take 2 cards", (card:Card)=>card.value%2===0),
-    new Rule("Must be Odd","Take 2 cards", (card:Card)=>card.value%2===1),
-    new Rule("Must be Red","Take 2 cards", (card:Card)=>card.suit==="Hearts" || card.suit==="Diamonds"),
-    new Rule("Must be Black","Take 2 cards", (card:Card)=>card.suit==="Clubs" || card.suit==="Spades"),
-    new Rule("Must be Greater than 5","Take 2 cards", (card:Card)=>card.value>5),
-    new Rule("Must be Less than 5","Take 2 cards", (card:Card)=>card.value<5),
-    // new Rule("Must be a Face Card","Take 2 cards", (card:Card)=>card.value===1),
-    // new Rule("Must be a Number Card","Take 2 cards", (card:Card)=>card.value!==1),
-    new Rule("Must be Hearts or Spades","Take 2 cards", (card:Card)=>card.suit==="Hearts" || card.suit==="Spades"),
-    new Rule("Must be Diamonds or Clubs","Take 2 cards", (card:Card)=>card.suit==="Diamonds" || card.suit==="Clubs"),
-    
-    new Rule("Play a spade if last card played was hears","Take 2 cards", (card:Card)=>{
-        return GameEngine.lastCardPlaced.suit==="Hearts"?card.suit==="Spades":true
-    }),
-    new Rule("If last card played was even, play an odd","Take 2 cards", (card:Card)=>{return GameEngine.lastCardPlaced.value%2===0?card.value%2===1:true}),
-    new Rule("Cant play the same value twice in a row","Take 2 cards", (card:Card)=>{return GameEngine.lastCardPlaced.value===card.value?false:true}),
-    new Rule("Must be a number card","Take 2 cards", (card:Card)=>card.value!==-1),
-    new Rule("If card played is less than 3, skip then next player","Skip next player", (card:Card)=>{return card.value<3?true:true}),
-]
+
+
+
+// Example rules
+const evenCard = (card: Card) => card.value % 2 === 0;
+const oddCard = (card: Card) => card.value % 2 === 1;
+const heartsCard = (card: Card) => card.suit === "Hearts";
+const diamondsCard = (card: Card) => card.suit === "Diamonds";
+const clubsCard = (card: Card) => card.suit === "Clubs";
+const spadesCard = (card: Card) => card.suit === "Spades";
+const redCard = (card: Card) => heartsCard(card) || diamondsCard(card);
+const blackCard = (card: Card) => clubsCard(card) || spadesCard(card);
+let allCards = generateAllCardTypes()
+export const isEven = (card: Card) => card.value % 2 === 0;
+export const isOdd = (card: Card) => card.value % 2 !== 0;
+export const isRed = (card: Card) => card.suit === "Hearts" || card.suit === "Diamonds";
+export const isBlack = (card: Card) => card.suit === "Clubs" || card.suit === "Spades";
+export const isHeart = (card: Card) => card.suit === "Hearts";
+export const isClub = (card: Card) => card.suit === "Clubs";
+export const isSpades = (card: Card) => card.suit === "Spades";
+export const isDiamonds = (card: Card) => card.suit === "Diamonds";
+// ==== PREVIOUS RULES ====
+const previousRules: Rule[] = [
+    new Rule(
+      "Red",
+      redCard,
+      "Prev lose all ❤️",
+      "You lose all ❤️",
+      { target: "previous", multiplier: 0, filter: allCards.filter(isHeart), removeAll: true },
+      { target: "self", multiplier: 0, filter: allCards.filter(isHeart), removeAll: true }
+    ),
+    new Rule(
+      "Black",
+      blackCard,
+      "Prev lose all Black",
+      "You lose all Black",
+      { target: "previous", multiplier: 0, filter: allCards.filter(isBlack),removeAll:true },
+      { target: "self", multiplier: 0, filter: allCards.filter(isBlack), removeAll:true }
+    ),
+  ];
+  
+  // ==== CURRENT/SELF RULES ====
+  const currentRules: Rule[] = [
+    new Rule(
+      "Even",
+      evenCard,
+      "⬆5x Evens",
+      "⬇All Evens",
+      { target: "self", multiplier: 5, filter: allCards.filter(isEven) },
+      { target: "self", multiplier: 0, filter: allCards.filter(isEven), removeAll:true }
+    ),
+    new Rule(
+      "Odd",
+      oddCard,
+      "⬆5x Odds",
+      "Lose all odds",
+      { target: "self", multiplier: 5, filter: allCards.filter(isOdd) },
+      { target: "self", multiplier: 0, filter: allCards.filter(isOdd), removeAll: true }
+    ),
+    new Rule(
+      "Black",
+      blackCard,
+      "⬆5x Black",
+      "⬇50% Black",
+      { target: "self", multiplier: 5, filter: allCards.filter(isBlack) },
+      { target: "self", multiplier: 0.5, filter: allCards.filter(isBlack) }
+    ),
+  ];
+  
+  // ==== NEXT RULES ====
+  const nextRules: Rule[] = [
+    new Rule(
+      "Black",
+      blackCard,
+      "You ⬆5x Black",
+      "Next ⬆5x Black",
+      { target: "self", multiplier: 5, filter: allCards.filter(isBlack) },
+      { target: "next", multiplier: 5, filter: allCards.filter(isBlack) }
+    ),
+    new Rule(
+      "Red",
+      redCard,
+      "You lose all ❤️",
+      "Next lose all ❤️",
+      { target: "self", multiplier: 0, filter: allCards.filter(isHeart), removeAll: true },
+      { target: "next", multiplier: 0, filter: allCards.filter(isHeart), removeAll: true }
+    ),
+  ];
+  
+  // ==== MERGE EVERYTHING ====
+  export const allPossibleRules: Rule[] = [
+    ...previousRules,
+    ...currentRules,
+    ...nextRules,
+  ];
+  
+
+  function makeInRange(min: number, max: number) {
+    return (card: Card) => card.value >= min && card.value <= max;
+  }
+  function makeNotInRange(min: number, max: number) {
+    return (card: Card) => card.value < min || card.value > max;
+  }
+  
+  // ✅ Rule generator
+  function generateGroupRules(
+    ranges: [number, number][],
+    allCards: Card[]
+  ): Rule[] {
+    return ranges.map(([min, max]) => {
+      const desc = `${min}–${max}`;
+      const inRange = makeInRange(min, max);
+      const notInRange = makeNotInRange(min, max);
+  
+      return new Rule(
+        desc,
+        inRange,
+        `You get 5x total cards`, // you can tune multiplier logic here
+        `You lose all cards except ${desc}`,
+        { target: "self", multiplier: 5, filter: allCards }, // success
+        { target: "self", multiplier: 0, filter: allCards.filter(notInRange) } // fail
+      );
+    });
+  }
+  const groups = generateGroupRules(
+    [
+      [0, 2],
+      [3, 5],
+      [6, 8],
+      [9, 12],
+      [13, 15],
+      [16, 20],
+    ],
+    allCards
+  );

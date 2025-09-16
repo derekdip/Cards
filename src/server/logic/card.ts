@@ -60,4 +60,4 @@ export function generateAllCardTypes(): Card[] {
     }
   
     return cards;
-  }
+}

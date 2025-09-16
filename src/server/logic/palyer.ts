@@ -36,8 +36,8 @@ export class Player {
     console.log("Player: "+this.id+" adding cards:")
     let total = 0
     for (const card of storedCards) {
-      this.handCounts.set(card.type, card);
-      console.log(`${card.type}: count ${card.count}`)
+      this.handCounts.set(card.id, card);
+      console.log(`${card.id}: count ${card.count}`)
       total+= card.count
     }
     this.handSize = total
@@ -49,27 +49,27 @@ export class Player {
     }
     return result;
   }
-  async addCards(count: number) {
+  async addCards(count: number, cardTypesToAdd:Card[]=generateAllCardTypes()) {
     console.log("Player: "+this.id+" adding cards:")
-    if(count>400){
-        this.addRandomCardsLarge(count)
+    if(count>20){
+        this.addRandomCardsLarge(count,cardTypesToAdd)
     }else{
-        this.addRandomCards(count)
+        this.addRandomCards(count,cardTypesToAdd)
     }
     console.log("Total cards now: "+this.handSize)
     await this.saveCurrentHand()
   }
-  async removeCards(count: number) {
+  async removeCards(count: number, cardTypesToRemove:Card[]=generateAllCardTypes()) {
     console.log("Player: "+this.id+" removing cards:")
-    if(count>400){
-        this.removeRandomCardsLarge(count)
+    if(count>20){
+        this.removeRandomCardsLarge(count,cardTypesToRemove)
     }else{
-        this.removeRandomCards(count)
+        this.removeRandomCards(count,cardTypesToRemove)
     }
     console.log("Total cards now: "+this.handSize)
     await this.saveCurrentHand()
   }
-  addRandomCardsLarge(count: number) {
+  addRandomCardsLarge(count: number, cardTypesToAdd:Card[]=generateAllCardTypes()) {
     const allTypes = generateAllCardTypes();
     const typeCount = allTypes.length;
     if (typeCount === 0) return;
@@ -103,14 +103,14 @@ export class Player {
       const key = card.toString();
       const playerCard =  this.handCounts.get(key)
       if(!playerCard){
-        this.handCounts.set(key, {type:card.toString(),suit:card.suit,value:card.value,count: allocations[i]!})
+        this.handCounts.set(key, {id:card.toString(),suit:card.suit,value:card.value,count: allocations[i]!})
       }else{
         this.handCounts.set(key, {...playerCard,count:playerCard.count + allocations[i]!});
       }
       console.log(`${key}: ${this.handCounts.get(key)}`)
     }
   }
-  addRandomCards(count: number) {
+  addRandomCards(count: number, cardTypesToAdd:Card[]=generateAllCardTypes()) {
     const allTypes = generateAllCardTypes();
     for (let i = 0; i < count; i++) {
       // pick a random type
@@ -118,20 +118,24 @@ export class Player {
       const key = card!.toString();
       const playerCard =  this.handCounts.get(key)
       if(!playerCard){
-        this.handCounts.set(key, {type:card.toString(),suit:card.suit,value:card.value,count: 1})
+        this.handCounts.set(key, {id:card.toString(),suit:card.suit,value:card.value,count: 1})
       }else{
         this.handCounts.set(key, {...playerCard,count:playerCard.count + 1});
       }
       console.log(`${key}: ${this.handCounts.get(key)}`)
     }
   }
-  async removeRandomCards(count: number) {
-    const allTypes = Array.from(this.handCounts.keys()); // only from cards actually in hand
+  async removeRandomCards(count: number,cardTypesToRemove:Card[]=generateAllCardTypes()) {
+    const handTypes = Array.from(this.handCounts.keys())
+    // Find the intersection by matching `id`
+    const sharedTypes = handTypes.filter(handType =>
+      cardTypesToRemove.some(removeType => removeType.toString() == handType)
+    );
     for (let i = 0; i < count; i++) {
-      if (allTypes.length === 0) break;
+      if (sharedTypes.length === 0) break;
   
       // pick a random card type that the player has
-      const card = allTypes[Math.floor(Player.rng() * allTypes.length)];
+      const card = sharedTypes[Math.floor(Player.rng() * sharedTypes.length)];
       if(!card){
         continue
       }
@@ -144,18 +148,22 @@ export class Player {
       if (playerCard.count > 0) {
         this.handCounts.set(key, {...playerCard,count:(playerCard.count - 1)});
         console.log(`Removed 1 ${key}, now ${this.handCounts.get(key)}`);
-        if (playerCard.count === 0) {
+        if (playerCard.count <= 0) {
           this.handCounts.delete(key); // clean up empty entries
           await redis.del(`player-${this.id}-${key}`)
-          allTypes.splice(allTypes.indexOf(key), 1);
+          sharedTypes.splice(sharedTypes.indexOf(key), 1);
         }
       }
     }
   }
   
-  async removeRandomCardsLarge(count: number) {
-    const keys = Array.from(this.handCounts.keys());
-    const typeCount = keys.length;
+  async removeRandomCardsLarge(count: number, cardTypesToRemove:Card[]=generateAllCardTypes()) {
+    const handTypes = Array.from(this.handCounts.keys())
+    // Find the intersection by matching `id`
+    const sharedTypes = handTypes.filter(handType =>
+      cardTypesToRemove.some(removeType => removeType.toString() == handType)
+    );
+    const typeCount = sharedTypes.length;
     if (typeCount === 0) return;
   
     // Step 1: random proportions
@@ -182,20 +190,26 @@ export class Player {
     }
   
     // Step 4: remove from handCounts
+    let overflow = 0
     for (let i = 0; i < typeCount; i++) {
-      const key = keys[i]!;
+      const key = sharedTypes[i]!;
       const playerCard = this.handCounts.get(key);
       if(!playerCard){
         continue
       }
-      const removeCount = Math.min(playerCard.count, allocations[i]!);
-      if (removeCount > 0) {
+      const removeCount = Math.min(playerCard.count, allocations[i]!)+overflow;
+      let cardsRemoved = playerCard.count - removeCount
+      if (cardsRemoved>=0) {
         this.handCounts.set(key, {...playerCard, count: (playerCard.count - removeCount)});
         console.log(`Removed ${removeCount} ${key}, now ${this.handCounts.get(key)}`);
-        if (playerCard.count === 0) {
+        if (playerCard.count <= 0) {
           this.handCounts.delete(key);
           await redis.del(`player-${this.id}-${key}`)
         }
+      }else{
+        overflow= Math.abs(cardsRemoved)
+        this.handCounts.delete(key);
+        await redis.del(`player-${this.id}-${key}`)
       }
     }
 }
@@ -237,6 +251,16 @@ async removeAllByFilter(
   
     console.log("Total cards now: " + this.handSize);
     await this.saveCurrentHand();
+  }
+  async updateCards(multiplier:number,cardTypesToAddOrRemove:Card[]){
+    let totalCards = this.handSize
+    let deltaTotalCardCount = (multiplier*totalCards - totalCards)
+    console.log("delta:"+deltaTotalCardCount)
+    if(deltaTotalCardCount<0){
+      await this.removeCards(Math.abs(deltaTotalCardCount),cardTypesToAddOrRemove)
+    }else{
+      await this.addCards(deltaTotalCardCount,cardTypesToAddOrRemove)
+    }
   }
   
   
@@ -367,6 +391,52 @@ export class PlayerLinkedList {
       }
       this.current = next
       return next.player;
+    }
+    peekNextPlayer(){
+      if (!this.current) return null;
+      let starting = this.current.player
+      let next = this.current.next
+      let current = this.current
+      while (next.player.handSize === 0) {
+        current = current.next;
+        next = current.next
+        if(current.player.id==starting.id){
+          return null
+        }
+      }
+      return next.player;
+    }
+    getPreviousPlayer(){
+      if (!this.current) return null;
+      let starting = this.current
+      let prev = this.current.prev
+      let current = this.current
+      while (prev.player.handSize === 0) {
+        current = current.prev;
+        prev = current.prev
+        if(current.player.id==starting.player.id){
+          return null
+        }
+      }
+      return prev.player;
+    }
+    getAllActivePlayers(){
+      let activePlayers:Player[]=[]
+      if (!this.current) return [];
+      let starting = this.current.player
+      let next = this.current.next
+      let current = this.current
+      if(current.player.handSize != 0){
+        activePlayers.push(current.player)
+      }
+      while (next.player.id!=starting.id) {
+        if(next.player.handSize>0){
+          activePlayers.push(next.player)
+        }
+        current = current.next;
+        next = current.next
+      }
+      return activePlayers;
     }
   
     getPlayers(): Player[] {
