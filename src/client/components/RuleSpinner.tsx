@@ -103,7 +103,7 @@ function RuleReel({
          >
            <RuleCard
              back={card.id.toString()}
-             front={card.description+card.successText+card.failText}
+             front={card.description}
              onPick={() => {}}
              revealed={revealed && i === sequence.length - 1} // only reveal last card
              disabled={true} // spinning cards aren’t clickable

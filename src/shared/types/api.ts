@@ -18,24 +18,17 @@ export type DecrementResponse = {
 };
 
 export type StoredCardType = {
-  id: string; // e.g., "3-Hearts" or "Special-1"
-  value: number; // 0-9 for regular, -1 for special
-  suit: string;  // e.g., "Hearts", "Diamonds", "Special"
+  type: string; // e.g., "5-Hearts" or "-1-Special"
   count: number;
 };
 export type CardType = {
   value: number; // 0-9 for regular, -1 for special
   suit: string;  // e.g., "Hearts", "Diamonds", "Special"
 };
-export type Target = "self" | "next" | "previous" | "all";
-
 export type RuleType = {
   id: number;
   description: string;
-  successText: string;
-  failText: string;
-  successTarget: Target;
-  failTarget: Target;
+  punishment: string;
 };
 export type PlayerStateType = {
   id: string;

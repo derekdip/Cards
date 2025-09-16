@@ -17,9 +17,9 @@ export class Card {
     this.suit = suit;
   }
   static createCard(): Card {
-    const value = Card.rng() * 9; // 0-8
+    const value = Card.rng() * 10; // 0-9
     const suit = regularSuits[Math.floor(Card.rng() * 4)];
-    return new Card(value+1, suit!); //1-9
+    return new Card(value, suit!);
   }
   static setRNG(rng: () => number) {
     Card.rng = rng;
@@ -53,10 +53,15 @@ export function generateAllCardTypes(): Card[] {
     const cards: Card[] = [];
   
     // Regular cards 0–9 × 4 suits
-    for (const value of Array.from({ length: 9 }, (_, i) => i)) {
+    for (const value of Array.from({ length: 10 }, (_, i) => i)) {
       for (const suit of regularSuits) {
-        cards.push(new Card(value+1, suit));
+        cards.push(new Card(value, suit));
       }
+    }
+  
+    // Special cards (value -1)
+    for (const suit of specialSuits) {
+      cards.push(new Card(-1, suit));
     }
   
     return cards;

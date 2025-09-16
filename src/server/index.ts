@@ -1,5 +1,5 @@
 import express from 'express';
-import { InitResponse, IncrementResponse, DecrementResponse, StoredCardType } from '../shared/types/api';
+import { InitResponse, IncrementResponse, DecrementResponse } from '../shared/types/api';
 import { redis, reddit, createServer, context, getServerPort, settings } from '@devvit/web/server';
 import { createPost } from './core/post';
 import seedrandom from 'seedrandom';
@@ -30,6 +30,7 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
     const { postId } = context;
 
     if (!postId) {
+      console.error('API Init Error: postId not found in devvit context');
       res.status(400).json({
         status: 'error',
         message: 'postId is required but missing from context',
@@ -50,6 +51,7 @@ router.get<{ postId: string }, InitResponse | { status: string; message: string 
         username: username ?? 'anonymous',
       });
     } catch (error) {
+      console.error(`API Init Error for post ${postId}:`, error);
       let errorMessage = 'Unknown error during initialization';
       if (error instanceof Error) {
         errorMessage = `Initialization failed: ${error.message}`;
@@ -108,6 +110,7 @@ router.post('/internal/on-app-install', async (_req, res): Promise<void> => {
       message: `Post created in subreddit ${context.subredditName} with id ${post.id}`,
     });
   } catch (error) {
+    console.error(`Error creating post: ${error}`);
     res.status(400).json({
       status: 'error',
       message: 'Failed to create post',
@@ -123,6 +126,7 @@ router.post('/internal/menu/post-create', async (_req, res): Promise<void> => {
       navigateTo: `https://reddit.com/r/${context.subredditName}/comments/${post.id}`,
     });
   } catch (error) {
+    console.error(`Error creating post: ${error}`);
     res.status(400).json({
       status: 'error',
       message: 'Failed to create post',
@@ -130,12 +134,16 @@ router.post('/internal/menu/post-create', async (_req, res): Promise<void> => {
   }
 });
 router.get('/api/init', async (_req, res): Promise<void> => {
-  await loadGame()
-  res.json(await GameEngine.getGameState())
+  res.json(await loadGame())
+})
+router.get('api/state', async (_req): Promise<void> => {
+  const seed = await settings.get('seed') as string
+  const turn = await redis.get('turn') as string
+  const rng =  createRNG(seed+turn)
+  console.log("state hit"+ rng())
 })
 router.post('/internal/scheduler/next-move', async (_req): Promise<void> => {
   const state = await redis.get('game-state')
-  console.log("gamestate --------")
   console.log(state)
   const optionChosen = 1
   switch(state) {
@@ -143,7 +151,7 @@ router.post('/internal/scheduler/next-move', async (_req): Promise<void> => {
       // start the game
       await redis.set('prev-game-state', 'initial')
       await redis.set('game-state', 'voting')
-      await redis.set('current-player-id', 'id-0')
+      await redis.set('current-player-id', 'id-1')
       console.log("initializing")
       await initializeGame()
       break;
@@ -202,7 +210,11 @@ async function initializeGame() {
     await redis.set(`player-${i}`, 'active')
     const p = new Player(`id-${i}`);
     GameEngine.addPlayer(p);
-    await p.addCards(4)
+    p.addCards(8)
+    const storedCards = p.getStoredCards()
+    for(const card of storedCards){
+        await redis.set(`player-${p.id}-${card.type}`, card.count.toString())
+    }
   }
   const {rule1,rule2,rule3} = Dealer.getThreeCards()
   const votingEnds = Date.now()+ 60 * 1000; // 1 minute from now
@@ -223,6 +235,7 @@ async function loadGame() {
   const rule1 = await redis.get('rule-1')
   const rule2 = await redis.get('rule-2')
   const rule3 = await redis.get('rule-3')
+  const currentPlayerId = await redis.get('current-player-id')
   if(rule1 && rule2 && rule3){
     currentRules = [rule1,rule2,rule3].map(r=>Dealer.fromString(r))
   }else{
@@ -230,7 +243,7 @@ async function loadGame() {
   }
   console.log("turn: "+turn)
   console.log("lastCard: "+lastCard)
-  if(!turn|| !endVotingTimeStr ||!lastCard) return
+  if(!turn|| !endVotingTimeStr ||!lastCard ||!currentPlayerId) return
   await GameEngine.initializeGame(turn,lastCard,currentRules)
   GameEngine.setEndVotingTime(parseInt(endVotingTimeStr))
   for (let i = 0; i < playerCount; i++) {
@@ -240,21 +253,21 @@ async function loadGame() {
     if(status !== "active") continue;
     const storedCards = await getCards(p)
     p.setCards(storedCards)
-    console.log(p.getTotalCardsInHand())
-    if(p.getTotalCardsInHand()<=0){
-      p.active=false
+    if(p.id==currentPlayerId){
+      GameEngine.setCurrentPlayer(p.id)
     }
   }
+  return GameEngine.getGameState()
 }
 async function getCards(player:Player){
-  const storedCards: StoredCardType[] = []
+  const storedCards: {type:string,count:number}[] = []
   const allTypes = generateAllCardTypes();
   for(const card of allTypes){
-      const countStr = await redis.get(`player-${player.id}-${card.value}-${card.suit}`)
+      const countStr = await redis.get(`player-${player.id}-${card.toString()}`)
       if(countStr){
           const count = parseInt(countStr)
           if(count > 0){
-              storedCards.push({suit:card.suit,count:count, id:`${card.value}-${card.suit}`, value:card.value})
+              storedCards.push({type:card.toString(),count})
           }
       }
   }

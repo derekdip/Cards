@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useGameState } from "../GameStateContext"; // your context hook
 import { PlayerModal } from "./Grid";
-import { PlayerStateType } from "../../shared/types/api";
 
 // Menu bar at top
 export const TopMenu = () => {

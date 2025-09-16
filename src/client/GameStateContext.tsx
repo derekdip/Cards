@@ -54,7 +54,7 @@ export const GameStateProvider = ({ children }: { children: ReactNode }) => {
   
     const timer = setTimeout(() => {
       fetchGameState();
-    }, diff + 2000); // delay ensures smooth transition
+    }, diff + 5000); // delay ensures smooth transition
   
     return () => clearTimeout(timer);
   }, [gameState?.endVotingTime]);

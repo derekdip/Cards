@@ -30,7 +30,7 @@ export function PlayerModal({ player, onClose }: { player: PlayerStateType; onCl
   // Build lookup map { "value-suit": count }
   const cardCounts: Record<string, number> = {};
   for (const c of player.handCounts) {
-    const key = `${c.value}-${c.suit}`;
+    const key = `${c.type}`;
     cardCounts[key] = c.count;
   }
 

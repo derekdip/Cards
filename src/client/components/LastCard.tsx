@@ -1,7 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useGameState } from "../GameStateContext";
-import { CardType } from "../../shared/types/api"; // your existing card component
 import { Card } from "./Card";
 
 export const LastCard = () => {

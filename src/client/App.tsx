@@ -4,7 +4,6 @@
 import { LastCard } from "./components/LastCard";
 import { TopMenu } from "./components/Menu";
 import { RuleHand } from "./components/RuleSpinner";
-import TableView from "./components/Table";
 import { Timer } from "./components/timer";
 import { GameStateProvider } from "./GameStateContext";
 
