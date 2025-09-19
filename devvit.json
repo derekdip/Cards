@@ -38,7 +38,7 @@
     "tasks": {
       "regular-interval-example-task": {
         "endpoint": "/internal/scheduler/next-move",
-        "cron": "*/1 * * * *"
+        "cron": "* */2 * * *"
       }
     }
   },

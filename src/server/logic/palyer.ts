@@ -2,6 +2,8 @@ import { redis } from "@devvit/web/server";
 import { Card, generateAllCardTypes } from "./card"; // your Card class
 import { PlayerStateType, StoredCardType, CardType } from "../../shared/types/api";
 
+export const PLAYERS = ["CARL", "FINNY", "LIZ", "PEANUT"];
+
 export class Player {
   id: string;
   name: string;

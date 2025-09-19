@@ -82,7 +82,7 @@ export function PlayerModal({
                   }, [toggledCards, cardCounts]);
                   return(
                     <div>
-                      <h2 className="text-xl font-bold mb-2">{player.name}’s Cards</h2>
+                      <h2 className="text-xl font-bold mb-2">{player.id}’s Cards</h2>
                       <p className="mb-2 text-gray-600">
                         Total: {player.handSize} cards in hand
                       </p>

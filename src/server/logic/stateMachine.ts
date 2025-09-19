@@ -18,6 +18,7 @@ export class GameEngine {
   static lastCardPlaced:Card
   static endVotingTime:number = 0
   static rules: Rule[] = [...allPossibleRules]
+  static previousRuleEnforced:RuleType
   static async getGameState(): Promise<GameStateType>{
     let currentRules:Rule[] = []
     const rule1 = await redis.get('rule-1')
@@ -42,13 +43,17 @@ export class GameEngine {
       currentRules: currentRules.map<RuleType>(r=>({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})),
       endVotingTime: GameEngine.endVotingTime,
       allRules: GameEngine.rules.map<RuleType>(r => ({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})),
+      previousRuleEnforced: GameEngine.previousRuleEnforced,
+      gameOver: GameEngine.players.getPlayers().filter(p=>p.handSize>0).length<=1,
+      moves: (await redis.get('turn'))??"0"
     }
   }
   constructor() {}
-  static async initializeGame(turn:string, lastCardPlaced:{suit:string,value:number}, currentRules:Rule[]){
+  static async initializeGame(turn:string, lastCardPlaced:{suit:string,value:number}, currentRules:Rule[],previousRuleEnforced:RuleType){
     const seed = await settings.get('seed') as string
     Dealer.rng = createRNG(`dealer-${turn}-${seed}`)
     Player.rng = createRNG(`player-${turn}-${seed}`)
+    GameEngine.previousRuleEnforced = previousRuleEnforced
     Dealer.initializeDealerDeck()
     GameEngine.lastCardPlaced = Card.fromString(`${lastCardPlaced.value}-${lastCardPlaced.suit}`)
     Dealer.currentRulesDisplayed = currentRules
@@ -90,6 +95,20 @@ export class GameEngine {
     const rule1 = await redis.get('rule-1')
     const rule2 = await redis.get('rule-2')
     const rule3 = await redis.get('rule-3')
+    const option1 = await redis.get('vote-0')
+    const option2 = await redis.get('vote-1')
+    const option3 = await redis.get('vote-2')
+    if (!rule1 || !rule2 || !rule3) {
+      return false
+    }
+    let optionChosenIndex:number
+    if(!option1 || !option2 || !option3){
+      let optionArray = [parseInt(option1??"0"),parseInt(option2??"0"),parseInt(option3??"0")]
+      optionChosenIndex = optionArray.indexOf(Math.max(...optionArray))
+    }else{
+      optionChosenIndex = [parseInt(option1),parseInt(option2),parseInt(option3)].indexOf(Math.max(parseInt(option1),parseInt(option2),parseInt(option3)))
+    }
+    
     Dealer.currentRulesDisplayed = [rule1,rule2,rule3].map(r=>Rule.fromString(Number(r)))
     const playerFound = GameEngine.setCurrentPlayer(playerId)
     console.log("Current player is: "+playerFound)
@@ -101,11 +120,11 @@ export class GameEngine {
       return false
     }
     const pickedCard = await playerNode.player.chooseCard()
-    console.log("Player "+playerNode.player.id+" chose option: "+optionChosen)
+    console.log("Player "+playerNode.player.id+" chose option: "+optionChosenIndex)
     if(!pickedCard){
       return false
     }
-    const ruleToEnforce = Dealer.currentRulesDisplayed[optionChosen]
+    const ruleToEnforce = Dealer.currentRulesDisplayed[optionChosenIndex]
     console.log("Player "+playerNode.player.id+" played card: "+pickedCard.toString())
     console.log("Enforcing rule: "+ruleToEnforce?.description)
     if(!ruleToEnforce){
@@ -131,6 +150,11 @@ export class GameEngine {
     await redis.set('last-card-suit',pickedCard.suit)
     await redis.set('last-card-value',pickedCard.value.toString())
     await redis.set('voting-ends',(Date.now()+ 60 * 1000).toString())
+    await redis.set('previous-rule-enforced',ruleToEnforce.id.toString())
+    await redis.set('vote-0', '0')
+    await redis.set('vote-1', '0')
+    await redis.set('vote-2', '0')
+    GameEngine.previousRuleEnforced = ruleToEnforce.toRuleType()
     GameEngine.lastCardPlaced = pickedCard
     Dealer.currentRulesDisplayed = [newRule1,newRule2,newRule3]
     console.log("advancing turn")

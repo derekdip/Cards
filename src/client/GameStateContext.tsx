@@ -18,9 +18,13 @@ const GameStateContext = createContext<GameStateContextType>({
 
 export const useGameState = () => useContext(GameStateContext);
 
+type VotingStatus = "not started"|"initial vote"|"already voted";
 export const GameStateProvider = ({ children }: { children: ReactNode }) => {
   const [gameState, setGameState] = useState<GameStateType | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [votingStatus,setVotingStatus] = useState<VotingStatus>("not started")
+  const [modalClosed,setModalClosed] = useState(false)
+  const [gameOverStatus,setGameOverStatus] = useState(false)
 
   const fetchGameState = async () => {
     setLoading(true);
@@ -30,10 +34,14 @@ export const GameStateProvider = ({ children }: { children: ReactNode }) => {
       const data: GameStateType = await res.json();
       console.log(data);
       setGameState(data);
+      if(data.gameOver){
+        setGameOverStatus(true)
+      }
     } catch (err) {
       console.error(err);
       setGameState(undefined);
     } finally {
+      setVotingStatus("not started")
       setLoading(false);
     }
   };
@@ -61,14 +69,102 @@ export const GameStateProvider = ({ children }: { children: ReactNode }) => {
   
     return () => clearTimeout(timer);
   }, [gameState?.endVotingTime]);
-  
+  const setPlayerChoice = async (choice:number) => {
+    console.log("Player chose: "+choice)
+    async function executeChoice(){
+      let resp = await fetch("/api/vote", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ option:choice }),
+      });
+      console.log("Vote response: "+resp.status)
+      if(resp.status ==200){
+        setVotingStatus("initial vote")
+        setModalClosed(false)
+      }
+      if(resp.status ==401){
+        setVotingStatus("already voted")
+        setModalClosed(false)
+      }
+    }
+    await executeChoice()
+  }
 
   return (
     <GameStateContext.Provider
-      value={{ gameState, loading, refreshGameState: fetchGameState, setPlayerChoice: async (i:number)=>{} }}
+      value={{ gameState, loading, refreshGameState: fetchGameState, setPlayerChoice }}
     >
+      {gameOverStatus&&<GameOverModal gameOverStatus={gameOverStatus} onClose={()=>{setGameOverStatus(false)}}></GameOverModal>}
+      {!modalClosed&&<VotingModal votingStatus={votingStatus} onClose={()=>{setModalClosed(true)}}></VotingModal>}
       {children}
     </GameStateContext.Provider>
+  );
+};
+
+export const VotingModal = ({
+  votingStatus,
+  onClose,
+}: {
+  votingStatus: VotingStatus;
+  onClose: () => void;
+}) => {
+  if (votingStatus=="not started") return null;
+
+  const message =
+    votingStatus === "initial vote"
+      ? "🎉 Thanks for voting!"
+      : "⚠️ You have already voted this round.";
+
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
+      onClick={onClose} // clicking outside closes
+    >
+      <div
+        className="bg-white p-6 rounded shadow-lg w-80 text-center"
+        onClick={(e) => e.stopPropagation()} // prevent modal click closing
+      >
+        <p className="mb-4">{message}</p>
+        <button
+          className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+          onClick={onClose}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+};
+export const GameOverModal = ({
+  gameOverStatus,
+  onClose,
+}: {
+  gameOverStatus: boolean;
+  onClose: () => void;
+}) => {
+  if (!gameOverStatus) return null;
+
+
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
+      onClick={onClose} // clicking outside closes
+    >
+      <div
+        className="bg-white p-6 rounded shadow-lg w-80 text-center"
+        onClick={(e) => e.stopPropagation()} // prevent modal click closing
+      >
+        <p className="mb-4">GAME OVER</p>
+        <button
+          className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+          onClick={onClose}
+        >
+          Play Again
+        </button>
+      </div>
+    </div>
   );
 };
 
@@ -78,7 +174,7 @@ export const GameStateProviderLocal = ({ children }: { children: ReactNode }) =>
   
   const [gameState, setGameState] = useState<GameStateType|undefined>();
   const [loading, setLoading] = useState(false);
-
+  const [gameOverStatus,setGameOverStatus] = useState(false)
   const refreshGameState = async () => {
     setLoading(true);
     try {
@@ -96,6 +192,9 @@ export const GameStateProviderLocal = ({ children }: { children: ReactNode }) =>
       const state = await GameEngine.getGameState()
       setGameState(state)
       setLoading(false);
+      if(state.gameOver){
+        setGameOverStatus(true)
+      }
     }
     await executeChoice()
   }
@@ -108,10 +207,11 @@ export const GameStateProviderLocal = ({ children }: { children: ReactNode }) =>
     }
     init()
   }
-  ,[])
+  ,[gameOverStatus])
 
   return (
     <GameStateContext.Provider value={{ gameState, loading, refreshGameState,setPlayerChoice }}>
+      {gameOverStatus&&<GameOverModal gameOverStatus={gameOverStatus} onClose={()=>{setGameOverStatus(false)}}></GameOverModal>}
       {children}
     </GameStateContext.Provider>
   );

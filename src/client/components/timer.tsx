@@ -27,7 +27,7 @@ export const Timer = () => {
   const seconds = Math.floor((timeLeft / 1000) % 60);
 
   return (
-    <div>
+    <div className="text-white font-mono text-lg">
       {hours.toString().padStart(2, "0")}:
       {minutes.toString().padStart(2, "0")}:
       {seconds.toString().padStart(2, "0")}

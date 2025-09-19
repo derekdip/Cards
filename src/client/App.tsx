@@ -43,8 +43,11 @@ export const App = () => {
             In <span className="font-semibold text-green-400">Solo Mode</span>, 
             you control the dealer and try to keep your chosen player alive.
           </p>
-          <p>
-            The dealer is crooked. Rules may help or hurt — pick wisely, and see if luck is on your side.
+          <p className="font-medium">
+            You are the crooked dealer: you see every player’s hand and decide who gets the advantage or who suffers each round.
+          </p>
+          <p className="opacity-90">
+            Your goal is to influence the outcome and choose who wins and who loses.
           </p>
         </div>
       </div>
@@ -100,10 +103,6 @@ const CommunityGame = ({setToggleMultiplayer}:{setToggleMultiplayer:React.Dispat
           >Main Menu</button>
       {/* Fixed top bar */}
       <TopMenu setToggleMultiplayer={setToggleMultiplayer} />
-      {/* Timer just under menu */}
-      <div className="py-2">
-        <Timer />
-      </div>
 
       {/* Game table fills remaining space */}
       <div className="flex-1 flex justify-center items-center overflow-hidden">

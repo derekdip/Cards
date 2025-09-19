@@ -51,4 +51,7 @@ export type GameStateType = {
   currentRules: RuleType[];
   endVotingTime: number;
   allRules: RuleType[];
+  previousRuleEnforced: RuleType;
+  gameOver: boolean;
+  moves: string;
 }

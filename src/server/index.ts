@@ -5,9 +5,10 @@ import { createPost } from './core/post';
 import seedrandom from 'seedrandom';
 import { GameEngine } from './logic/stateMachine';
 import { generateAllCardTypes } from './logic/card';
-import { Player } from './logic/palyer';
+import { Player, PLAYERS } from './logic/palyer';
 import { Dealer } from './logic/dealer';
-import { Rule } from './logic/rules';
+import { allPossibleRules, Rule } from './logic/rules';
+import { pre } from 'motion/react-client';
 
 function createRNG(seed: string): () => number {
   const rng = seedrandom(seed); // deterministic PRNG
@@ -80,6 +81,63 @@ router.post<{ postId: string }, IncrementResponse | { status: string; message: s
     });
   }
 );
+router.post("/api/vote", async (req, res): Promise<void> => {
+  const { userId } = context;
+  const { option } = req.body;
+  console.log(`Vote API called by user ${userId} with option: ${option}`);
+  // --- Validation ---
+  if (!userId) {
+    res.status(400).json({ status: "error", message: "userId is required" });
+    return;
+  }
+  if (option === undefined || option === null || Number.isNaN(parseInt(option))) {
+    res.status(400).json({ status: "error", message: "option is required" });
+    return;
+  }
+  const optionNum = parseInt(option);
+  if (![0, 1, 2, 3].includes(optionNum)) {
+    res.status(400).json({ status: "error", message: "option must be 0, 1, 2, or 3" });
+    return;
+  }
+
+  try {
+    // --- Get current round ---
+    const currentRound = await redis.get("turn");
+    if (!currentRound) {
+      res.status(500).json({ status: "error", message: "Current round not set" });
+      return;
+    }
+
+    const userRoundKey = `user-${userId}-voted-round`;
+    const lastVotedRound = await redis.get(userRoundKey);
+    console.log(`User ${userId} last voted in round: ${lastVotedRound}, current round: ${currentRound}`);
+
+    // --- Check if already voted this round ---
+    if (lastVotedRound === currentRound) {
+      res.status(401).json({ status: "error", message: "Already voted this round" });
+      return;
+    }
+
+    // --- Handle previous vote if exists (optional) ---
+    const previousVote = await redis.get(`user-${userId}-vote`);
+    if (previousVote && previousVote !== option.toString()) {
+      await redis.incrBy(`vote-${previousVote}`, -1);
+    }
+
+    // --- Increment new vote ---
+    await redis.incrBy(`vote-${option}`, 1);
+
+    // --- Record user's vote and round ---
+    await redis.set(userRoundKey, currentRound);
+    await redis.set(`user-${userId}-vote`, option.toString());
+
+    res.status(200).json({ status: "ok", message: "Vote counted" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ status: "error", message: "Internal server error" });
+  }
+});
+
 
 router.post<{ postId: string }, DecrementResponse | { status: string; message: string }, unknown>(
   '/api/decrement',
@@ -151,7 +209,11 @@ router.post('/internal/scheduler/next-move', async (_req): Promise<void> => {
       // start the game
       await redis.set('prev-game-state', 'initial')
       await redis.set('game-state', 'voting')
-      await redis.set('current-player-id', 'id-0')
+      await redis.set('current-player-id', `${PLAYERS[0]}`)
+      await redis.set('previous-rule-enforced',allPossibleRules[0]!.id.toString())
+      await redis.set('vote-0', '0')
+      await redis.set('vote-1', '0')
+      await redis.set('vote-2', '0')
       console.log("initializing")
       await initializeGame()
       break;
@@ -160,7 +222,11 @@ router.post('/internal/scheduler/next-move', async (_req): Promise<void> => {
       // start the game
       await redis.set('prev-game-state', 'initial')
       await redis.set('game-state', 'voting')
-      await redis.set('current-player-id', 'id-0')
+      await redis.set('current-player-id', `${PLAYERS[0]}`)
+      await redis.set('previous-rule-enforced',allPossibleRules[0]!.id.toString())
+      await redis.set('vote-0', '0')
+      await redis.set('vote-1', '0')
+      await redis.set('vote-2', '0')
       console.log("initializing")
       await initializeGame()
       break;
@@ -204,11 +270,10 @@ server.on('error', (err) => console.error(`server error; ${err.stack}`));
 server.listen(port);
 
 async function initializeGame() {
-  const playerCount = 4
-  await GameEngine.initializeGame('0', {suit:"Hearts",value:7},[])
-  for (let i = 0; i < playerCount; i++) {
-    await redis.set(`player-${i}`, 'active')
-    const p = new Player(`id-${i}`);
+  await GameEngine.initializeGame('0', {suit:"Hearts",value:7},[],{id:0,description:"",successTarget:"self",successText:"",failTarget:"self",failText:""})
+  for (let playerName of PLAYERS) {
+    await redis.set(`player-${playerName}`, 'active')
+    const p = new Player(`${playerName}`);
     GameEngine.addPlayer(p);
     p.addCards(8)
     const storedCards = p.getStoredCards()
@@ -228,7 +293,6 @@ async function initializeGame() {
 
 }
 async function loadGame() {
-  const playerCount = 4
   const turn = await redis.get('turn')
   const lastCardSuit = await redis.get('last-card-suit')
   const lastCardValueStr = await redis.get('last-card-value')
@@ -239,20 +303,24 @@ async function loadGame() {
   const rule1 = await redis.get('rule-1')
   const rule2 = await redis.get('rule-2')
   const rule3 = await redis.get('rule-3')
+  const previousRuleEnforcedStr = await redis.get('previous-rule-enforced')
   const currentPlayerId = await redis.get('current-player-id')
   if(rule1 && rule2 && rule3){
     currentRules = [rule1,rule2,rule3].map(r=>Dealer.fromString(r))
   }else{
     return
   }
+  if(!previousRuleEnforcedStr) {
+    return
+  }
   console.log("turn: "+turn)
   console.log("lastCard: "+lastCard)
   if(!turn|| !endVotingTimeStr ||!lastCard ||!currentPlayerId) return
-  await GameEngine.initializeGame(turn,lastCard,currentRules)
+  await GameEngine.initializeGame(turn,lastCard,currentRules,allPossibleRules.find(r=>r.id===parseInt(previousRuleEnforcedStr))?.toRuleType()||{id:0,description:"",successTarget:"self",successText:"",failTarget:"self",failText:""})
   GameEngine.setEndVotingTime(parseInt(endVotingTimeStr))
-  for (let i = 0; i < playerCount; i++) {
-    const status = await redis.get(`player-${i}`)
-    const p = new Player(`id-${i}`);
+  for (let playerName of PLAYERS) {
+    const status = await redis.get(`player-${playerName}`)
+    const p = new Player(`${playerName}`);
     GameEngine.addPlayer(p);
     if(status !== "active") continue;
     const storedCards = await getCards(p)

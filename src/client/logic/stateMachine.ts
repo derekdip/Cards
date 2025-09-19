@@ -19,6 +19,8 @@ export class GameEngine {
   static endVotingTime:number = 0
   static rules: Rule[] = [...allPossibleRules]
   static currentRules:Rule[] = []
+  static previousRuleEnforced:RuleType
+  static moves: number = 0
   static async getGameState(): Promise<GameStateType>{
     console.log(Dealer.currentRulesDisplayed)
     // id: number;
@@ -37,10 +39,14 @@ export class GameEngine {
       currentRules: Dealer.currentRulesDisplayed.map<RuleType>(r=>({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})),
       endVotingTime: GameEngine.endVotingTime,
       allRules: GameEngine.rules.map<RuleType>(r => ({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})),
+      previousRuleEnforced: GameEngine.previousRuleEnforced,
+      gameOver: GameEngine.players.getPlayers().filter(p=>p.handSize>0).length<=1,
+      moves: GameEngine.moves.toString()
     }
   }
   constructor() {}
   static async initializeGame(){
+    GameEngine.moves = 0
     GameEngine.players = new PlayerLinkedList()
     let data: {seed:string}={seed:"default-seed"}
     Dealer.setRNG( createRNG(`dealer-${data.seed}`))
@@ -48,11 +54,12 @@ export class GameEngine {
     Dealer.initializeDealerDeck()
     const playerCount = 4 //later get from api
     for (let i = 0; i < playerCount; i++) {
-      const p = new Player(`id-${i}`);
+      const p = new Player(`player-${i}`);
       GameEngine.addPlayer(p);
-      p.addCards(8)
+      p.addCards(16)
     }
-    this.setCurrentPlayer("id-0")
+    this.setCurrentPlayer("player-0")
+    GameEngine.previousRuleEnforced = {id:0,description:"",successTarget:"self",successText:"",failTarget:"self",failText:""}
     GameEngine.lastCardPlaced = new Card(7,"Hearts")
     const {rule1,rule2,rule3} = Dealer.getThreeCards()
     Dealer.currentRulesDisplayed = [rule1,rule2,rule3]
@@ -129,8 +136,10 @@ export class GameEngine {
     const {rule1:newRule1,rule2:newRule2,rule3:newRule3} = Dealer.getThreeCards()
     GameEngine.currentRules = [newRule1,newRule2,newRule3]
     GameEngine.lastCardPlaced = pickedCard
+    GameEngine.previousRuleEnforced = ruleToEnforce.toRuleType()
     Dealer.currentRulesDisplayed = [newRule1,newRule2,newRule3]
     console.log("advancing turn")
+    GameEngine.moves++
     let newCurrentPlayer = GameEngine.players.advanceTurn()
     if(newCurrentPlayer==null){
       console.log("err")
