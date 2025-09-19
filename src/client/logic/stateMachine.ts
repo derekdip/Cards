@@ -1,11 +1,10 @@
 // GameEngine.ts
-import seedrandom from "seedrandom";
 import { Card } from "./card";
 import { Dealer } from "./dealer";
 import { Player, PlayerLinkedList } from "./palyer";
-import { redis, settings } from "@devvit/web/server";
 import { Rule , allPossibleRules} from "./rules";
 import { GameStateType, RuleType } from "../../shared/types/api";
+import seedrandom from "seedrandom";
 
 
 function createRNG(seed: string): () => number {
@@ -13,19 +12,14 @@ function createRNG(seed: string): () => number {
   return () => rng(); // same API as Math.random()
 }
 
+
 export class GameEngine {
   static players: PlayerLinkedList = new PlayerLinkedList();
   static lastCardPlaced:Card
   static endVotingTime:number = 0
   static rules: Rule[] = [...allPossibleRules]
+  static currentRules:Rule[] = []
   static async getGameState(): Promise<GameStateType>{
-    let currentRules:Rule[] = []
-    const rule1 = await redis.get('rule-1')
-    const rule2 = await redis.get('rule-2')
-    const rule3 = await redis.get('rule-3')
-    if(rule1 && rule2 && rule3){
-      currentRules = [rule1,rule2,rule3].map(r=>Dealer.fromString(r))
-    }
     console.log(Dealer.currentRulesDisplayed)
     // id: number;
     // description: string;
@@ -35,23 +29,34 @@ export class GameEngine {
     // failTarget: Target;
 
     console.log(Dealer.currentRulesDisplayed.map<RuleType>(r=>({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})))
+    console.log(await Promise.all(GameEngine.players.getPlayers().map(async (p) => await p.getPlayerState())))
     return {
       players: await Promise.all(GameEngine.players.getPlayers().map(async (p) => await p.getPlayerState())),
-      currentPlayer: await redis.get('current-player-id'),
-      lastCardPlaced: {suit:(await redis.get('last-card-suit')??""),value:parseInt(await redis.get('last-card-value')??"0")},
-      currentRules: currentRules.map<RuleType>(r=>({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})),
+      currentPlayer: GameEngine.players.current?.player.id ,
+      lastCardPlaced: {suit:GameEngine.lastCardPlaced.suit,value:GameEngine.lastCardPlaced.value},
+      currentRules: Dealer.currentRulesDisplayed.map<RuleType>(r=>({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})),
       endVotingTime: GameEngine.endVotingTime,
       allRules: GameEngine.rules.map<RuleType>(r => ({id:r.id,description:r.description,successTarget:r.successTarget,successText:r.successText,failTarget:r.failTarget,failText:r.failText})),
     }
   }
   constructor() {}
-  static async initializeGame(turn:string, lastCardPlaced:{suit:string,value:number}, currentRules:Rule[]){
-    const seed = await settings.get('seed') as string
-    Dealer.rng = createRNG(`dealer-${turn}-${seed}`)
-    Player.rng = createRNG(`player-${turn}-${seed}`)
+  static async initializeGame(){
+    GameEngine.players = new PlayerLinkedList()
+    let data: {seed:string}={seed:"default-seed"}
+    Dealer.setRNG( createRNG(`dealer-${data.seed}`))
+    Player.setRNG( createRNG(`player-${data.seed}`))
     Dealer.initializeDealerDeck()
-    GameEngine.lastCardPlaced = Card.fromString(`${lastCardPlaced.value}-${lastCardPlaced.suit}`)
-    Dealer.currentRulesDisplayed = currentRules
+    const playerCount = 4 //later get from api
+    for (let i = 0; i < playerCount; i++) {
+      const p = new Player(`id-${i}`);
+      GameEngine.addPlayer(p);
+      p.addCards(8)
+    }
+    this.setCurrentPlayer("id-0")
+    GameEngine.lastCardPlaced = new Card(7,"Hearts")
+    const {rule1,rule2,rule3} = Dealer.getThreeCards()
+    Dealer.currentRulesDisplayed = [rule1,rule2,rule3]
+    GameEngine.currentRules = [rule1,rule2,rule3]
     console.log("Initialized game with last card: "+GameEngine.lastCardPlaced.toString())
   }
   static setEndVotingTime(time:number){
@@ -87,10 +92,7 @@ export class GameEngine {
   }
 
   static async executeTurn(optionChosen:number, playerId:string){
-    const rule1 = await redis.get('rule-1')
-    const rule2 = await redis.get('rule-2')
-    const rule3 = await redis.get('rule-3')
-    Dealer.currentRulesDisplayed = [rule1,rule2,rule3].map(r=>Rule.fromString(Number(r)))
+    // Dealer.currentRulesDisplayed = GameEngine.currentRules.map(r=>Rule.fromString(Number(r)))
     const playerFound = GameEngine.setCurrentPlayer(playerId)
     console.log("Current player is: "+playerFound)
     if(!playerFound){ //find current player
@@ -106,6 +108,7 @@ export class GameEngine {
       return false
     }
     const ruleToEnforce = Dealer.currentRulesDisplayed[optionChosen]
+    console.log("current rules: "+Dealer.currentRulesDisplayed.map(r=>r))
     console.log("Player "+playerNode.player.id+" played card: "+pickedCard.toString())
     console.log("Enforcing rule: "+ruleToEnforce?.description)
     if(!ruleToEnforce){
@@ -124,13 +127,7 @@ export class GameEngine {
     //   await playerNode.player.removeAllByFilter({number:9,comparator:"less"})
     // }
     const {rule1:newRule1,rule2:newRule2,rule3:newRule3} = Dealer.getThreeCards()
-    await redis.set('rule-1', newRule1.id.toString())
-    await redis.set('rule-2', newRule2.id.toString())
-    await redis.set('rule-3', newRule3.id.toString())
-    await redis.incrBy('turn', 1)
-    await redis.set('last-card-suit',pickedCard.suit)
-    await redis.set('last-card-value',pickedCard.value.toString())
-    await redis.set('voting-ends',(Date.now()+ 60 * 1000).toString())
+    GameEngine.currentRules = [newRule1,newRule2,newRule3]
     GameEngine.lastCardPlaced = pickedCard
     Dealer.currentRulesDisplayed = [newRule1,newRule2,newRule3]
     console.log("advancing turn")
@@ -140,7 +137,6 @@ export class GameEngine {
       return false
     }
     console.log("nextplayer:"+newCurrentPlayer.id)
-    await redis.set('current-player-id',newCurrentPlayer.id)
     return true
   }
 

@@ -1,4 +1,3 @@
-import { redis } from "@devvit/web/server";
 import { Card, generateAllCardTypes } from "./card"; // your Card class
 import { PlayerStateType, StoredCardType, CardType } from "../../shared/types/api";
 
@@ -23,7 +22,6 @@ export class Player {
     console.log(`Player: ${this.id} hand contents:`);
     let total = 0
     for (const [key, card] of this.handCounts.entries()) {
-        await redis.set(`player-${this.id}-${key}`,card.count.toString())
         console.log(`${key}: ${card.count}`);
         total+= card.count
     }
@@ -150,7 +148,6 @@ export class Player {
         console.log(`Removed 1 ${key}, now ${this.handCounts.get(key)}`);
         if (playerCard.count <= 0) {
           this.handCounts.delete(key); // clean up empty entries
-          await redis.del(`player-${this.id}-${key}`)
           sharedTypes.splice(sharedTypes.indexOf(key), 1);
         }
       }
@@ -204,12 +201,10 @@ export class Player {
         console.log(`Removed ${removeCount} ${key}, now ${this.handCounts.get(key)}`);
         if (playerCard.count <= 0) {
           this.handCounts.delete(key);
-          await redis.del(`player-${this.id}-${key}`)
         }
       }else{
         overflow= Math.abs(cardsRemoved)
         this.handCounts.delete(key);
-        await redis.del(`player-${this.id}-${key}`)
       }
     }
 }
@@ -245,7 +240,6 @@ async removeAllByFilter(
       if (match) {
         console.log(`Removed all ${key} (${this.handCounts.get(key)} cards)`);
         this.handCounts.delete(key);
-        await redis.del(`player-${this.id}-${key}`)
       }
     }
   
@@ -283,7 +277,6 @@ async removeAllByFilter(
         // decrement count
         if (playerCard.count === 1) {
           this.handCounts.delete(key);
-          await redis.del(`player-${this.id}-${key}`)
         }
         else this.handCounts.set(key, {...playerCard,count:(playerCard.count - 1)});
         await this.saveCurrentHand()

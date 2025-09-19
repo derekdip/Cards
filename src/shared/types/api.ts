@@ -47,7 +47,7 @@ export type PlayerStateType = {
 export type GameStateType = {
   players:  PlayerStateType[];
   currentPlayer: string | undefined;
-  lastCardPlaced: string;
+  lastCardPlaced: CardType;
   currentRules: RuleType[];
   endVotingTime: number;
   allRules: RuleType[];

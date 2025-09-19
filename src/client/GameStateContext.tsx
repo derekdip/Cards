@@ -1,22 +1,25 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { GameStateType } from "../shared/types/api";
+import { GameEngine }from "./logic/stateMachine"
 
 interface GameStateContextType {
-  gameState: GameStateType | null;
+  gameState: GameStateType | undefined;
   loading: boolean;
   refreshGameState: () => Promise<void>;
+  setPlayerChoice: (i:number)=>Promise<void>;
 }
 
 const GameStateContext = createContext<GameStateContextType>({
-  gameState: null,
+  gameState: undefined,
   loading: true,
   refreshGameState: async () => {},
+  setPlayerChoice: async (i:number)=>{},
 });
 
 export const useGameState = () => useContext(GameStateContext);
 
 export const GameStateProvider = ({ children }: { children: ReactNode }) => {
-  const [gameState, setGameState] = useState<GameStateType | null>(null);
+  const [gameState, setGameState] = useState<GameStateType | undefined>(undefined);
   const [loading, setLoading] = useState(true);
 
   const fetchGameState = async () => {
@@ -29,7 +32,7 @@ export const GameStateProvider = ({ children }: { children: ReactNode }) => {
       setGameState(data);
     } catch (err) {
       console.error(err);
-      setGameState(null);
+      setGameState(undefined);
     } finally {
       setLoading(false);
     }
@@ -62,8 +65,53 @@ export const GameStateProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <GameStateContext.Provider
-      value={{ gameState, loading, refreshGameState: fetchGameState }}
+      value={{ gameState, loading, refreshGameState: fetchGameState, setPlayerChoice: async (i:number)=>{} }}
     >
+      {children}
+    </GameStateContext.Provider>
+  );
+};
+
+
+
+export const GameStateProviderLocal = ({ children }: { children: ReactNode }) => {
+  
+  const [gameState, setGameState] = useState<GameStateType|undefined>();
+  const [loading, setLoading] = useState(false);
+
+  const refreshGameState = async () => {
+    setLoading(true);
+    try {
+      
+    } finally {
+      setLoading(false);
+    }
+  };
+  const setPlayerChoice = async (choice:number) => {
+    console.log("Player chose: "+choice)
+    setLoading(true);
+    async function executeChoice(){
+      console.log("Executing choice: "+choice)
+      await GameEngine.executeTurn(choice,gameState?.currentPlayer??"")
+      const state = await GameEngine.getGameState()
+      setGameState(state)
+      setLoading(false);
+    }
+    await executeChoice()
+  }
+  useEffect(() => {
+    async function init() {
+      await GameEngine.initializeGame()
+      const state = await GameEngine.getGameState()
+      setGameState(state)
+      setLoading(false)
+    }
+    init()
+  }
+  ,[])
+
+  return (
+    <GameStateContext.Provider value={{ gameState, loading, refreshGameState,setPlayerChoice }}>
       {children}
     </GameStateContext.Provider>
   );

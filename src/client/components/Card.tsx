@@ -1,16 +1,16 @@
-export function Card({content}: {content:string}) {
+import { CardType } from "../../shared/types/api";
+const suits = [{str:"Clubs",val:"♣"},{str:"Diamonds",val:"♦"},{str:"Hearts",val:"♥"},{str:"Spades",val:"♠"}]
+export function Card({value,suit}: CardType) {
     return (
-      <div
-      >
         <div
-          className="relative w-full h-full transition-transform preserve-3d"
-        >
-          {/* Back (face down) */}
-          <div className="absolute w-full h-full bg-gray-800 rounded-xl flex items-center justify-center backface-hidden shadow-md">
-            {content}
-          </div>
-  
-        </div>
+        className={`h-10 w-8 border rounded-md flex flex-col items-center justify-center cursor-pointer bg-gray-100`}
+        style={{ marginLeft: "-8px" }}
+      >
+        
+          <span>
+            {value}
+            {suits.find(s=>s.str===suit)?.val}
+          </span>
       </div>
     );
   }

@@ -5,8 +5,8 @@ import { useGameState } from "../GameStateContext"; // adjust path
 import { RuleType } from "../../shared/types/api"; // adjust path
 
 // ---------- RuleHand (top-level controller) ----------
-export function RuleHand({ loops = 2 }: { loops?: number }) {
-  const { gameState, loading } = useGameState();
+export function RuleHand({ loops = 2}: { loops?: number}) {
+  const { gameState, loading, setPlayerChoice } = useGameState();
   const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
@@ -15,10 +15,10 @@ export function RuleHand({ loops = 2 }: { loops?: number }) {
     // Reset before each spin
     setRevealed(false);
 
-    const totalSpinTime = 4000 + (gameState.currentRules.length - 1) * 500;
+    const totalSpinTime = 2000 + (gameState.currentRules.length - 1) * 300;
     const timer = setTimeout(() => {
       setRevealed(true); // reveal chosen cards after spin
-    }, totalSpinTime + 200);
+    }, totalSpinTime + 120);
 
     return () => clearTimeout(timer);
   }, [gameState?.currentRules]);
@@ -30,12 +30,14 @@ export function RuleHand({ loops = 2 }: { loops?: number }) {
     <div className="flex justify-center p-4 gap-2">
       {gameState.currentRules.map((rule, i) => (
         <RuleReel
+          index={i}
           key={i}
           allCards={gameState.allRules}
           chosen={rule}
           delay={i * 0.5}
           loops={loops}
           revealed={revealed}
+          setPlayerChoice={setPlayerChoice}
         />
       ))}
     </div>
@@ -49,18 +51,22 @@ function RuleReel({
   delay = 0,
   loops,
   revealed,
+  setPlayerChoice,
+  index,
 }: {
   allCards: RuleType[];
   chosen: RuleType;
   delay?: number;
   loops: number;
   revealed: boolean;
+  setPlayerChoice: (choice:number)=>void,
+  index: number; 
 }) {
   const controls = useAnimation();
   const [sequence, setSequence] = useState<RuleType[]>([]);
 
-  const cardWidth = 70;
-  const cardHeight = 88;
+  const cardWidth = 100;
+  const cardHeight = 148;
 
   useEffect(() => {
     const seq = buildSpinSequence(allCards, chosen, loops);
@@ -72,7 +78,7 @@ function RuleReel({
       controls.start({
         x: -(totalWidth - cardWidth),
         transition: {
-          duration: 4 + delay,
+          duration: 2 + delay,
           ease: [0.25, 1, 0.5, 1],
         },
       });
@@ -103,10 +109,10 @@ function RuleReel({
          >
            <RuleCard
              back={card.id.toString()}
-             front={card.description}
-             onPick={() => {}}
+             front={card}
+             onPick={() => {setPlayerChoice(index)}}
              revealed={revealed && i === sequence.length - 1} // only reveal last card
-             disabled={true} // spinning cards aren’t clickable
+             disabled={false} // spinning cards aren’t clickable
              width={cardWidth}
              height={cardHeight}
            />
@@ -126,14 +132,14 @@ export function RuleCard({
   disabled,
   back,
   front,
-  width = 112,
-  height = 168,
+  width = 132,
+  height = 200,
 }: {
   onPick: () => void;
   revealed: boolean;
   disabled: boolean;
   back: string;
-  front: string;
+  front: RuleType;
   width?: number;
   height?: number;
 }) {
@@ -171,14 +177,29 @@ export function RuleCard({
         </div>
 
         {/* Face Up */}
-        <div className="absolute w-full h-full rounded-xl flex flex-col items-center justify-center backface-hidden rotate-y-180 shadow-lg border-2 border-yellow-400 bg-gradient-to-br from-yellow-200 via-yellow-300 to-yellow-100 p-2">
-          <span
-            className="text-black text-center font-semibold"
-            style={{ fontSize: frontFontSize }}
-          >
-            {front}
-          </span>
-        </div>
+        <div className="absolute w-full h-full rounded-xl flex flex-col justify-center backface-hidden rotate-y-180 shadow-lg border-2 border-yellow-400 bg-gradient-to-br from-yellow-200 via-yellow-300 to-yellow-100 p-4 space-y-1">
+  {/* Description */}
+  <div className="text-black text-center font-semibold" style={{ fontSize: frontFontSize }}>
+    {front.description}
+  </div>
+
+  {/* Divider */}
+  <div className="w-full border-t-2 border-yellow-500 opacity-70" />
+
+  {/* Success text */}
+  <div className="text-green-700 text-center font-medium" style={{ fontSize: frontFontSize * 0.9 }}>
+    ✅ {front.successText}
+  </div>
+
+  {/* Divider */}
+  <div className="w-full border-t border-yellow-400 opacity-50" />
+
+  {/* Fail text */}
+  <div className="text-red-700 text-center font-medium" style={{ fontSize: frontFontSize * 0.9 }}>
+    ❌ {front.failText}
+  </div>
+</div>
+
       </motion.div>
     </motion.div>
   );

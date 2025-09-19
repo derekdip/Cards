@@ -2,10 +2,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useGameState } from "../GameStateContext";
 import { Card } from "./Card";
+import { CardType } from "../../shared/types/api";
 
 export const LastCard = () => {
   const { gameState, loading } = useGameState();
-  const [lastCard, setLastCard] = useState<string>();
+  const [lastCard, setLastCard] = useState<CardType>();
 
   // Trigger animation when the lastCard changes
   useEffect(() => {
@@ -21,14 +22,14 @@ export const LastCard = () => {
       <AnimatePresence>
         {lastCard && (
           <motion.div
-            key={lastCard}
+            key={lastCard.suit}
             initial={{ y: -200, opacity: 0, scale: 0.8 }} // start near player side (top)
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.5 }}
             transition={{ duration: 0.8, ease: "easeOut" }}
             className="absolute"
           >
-            <Card content={lastCard} />
+            <Card {...lastCard} />
           </motion.div>
         )}
       </AnimatePresence>

@@ -204,8 +204,8 @@ server.on('error', (err) => console.error(`server error; ${err.stack}`));
 server.listen(port);
 
 async function initializeGame() {
-  const playerCount = 6
-  await GameEngine.initializeGame('0', 'spades-1',[])
+  const playerCount = 4
+  await GameEngine.initializeGame('0', {suit:"Hearts",value:7},[])
   for (let i = 0; i < playerCount; i++) {
     await redis.set(`player-${i}`, 'active')
     const p = new Player(`id-${i}`);
@@ -223,13 +223,17 @@ async function initializeGame() {
   await redis.set('rule-2', rule2.id.toString())
   await redis.set('rule-3', rule3.id.toString())
   await redis.incrBy('turn', 1)
-  await redis.set('last-card','hearts-1')
+  await redis.set('last-card-suit','Hearts')
+  await redis.set('last-card-value','7')
 
 }
 async function loadGame() {
-  const playerCount = 6
+  const playerCount = 4
   const turn = await redis.get('turn')
-  const lastCard = await redis.get('last-card')
+  const lastCardSuit = await redis.get('last-card-suit')
+  const lastCardValueStr = await redis.get('last-card-value')
+  const lastCard = lastCardSuit && lastCardValueStr ? {suit:lastCardSuit,value:parseInt(lastCardValueStr)} : null
+
   const endVotingTimeStr = await redis.get('voting-ends')
   let currentRules:Rule[] = []
   const rule1 = await redis.get('rule-1')
